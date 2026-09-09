@@ -21,9 +21,14 @@ async function fetchAll() {
         break;
       }
       const data = await res.json();
-      total = data.total;
-      allIssues.push(...data.issues);
-      console.log('Page ' + page + ': fetched ' + data.issues.length + ' issues (accumulated ' + allIssues.length + ' of ' + total + ')');
+      const numTotal = Number.parseInt(String(data?.total || 0), 10);
+      const batchCount = Array.isArray(data?.issues) ? data.issues.length : 0;
+      total = numTotal;
+      if (Array.isArray(data?.issues)) {
+        allIssues.push(...data.issues);
+      }
+      const accumulated = allIssues.length;
+      console.log(`Page ${page}: fetched ${batchCount} issues (accumulated ${accumulated} of ${total})`);
       if (allIssues.length >= total || data.issues.length === 0) {
         break;
       }

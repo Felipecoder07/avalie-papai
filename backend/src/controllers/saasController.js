@@ -534,11 +534,18 @@ function verificarAssinaturaMP(req, secret) {
  */
 const handleSaaSWebhook = async (req, res) => {
   try {
-    const paymentId = req.body?.data?.id || req.query?.id || req.query?.['data.id'] || req.body?.id;
+    const rawPaymentId = req.body?.data?.id || req.query?.id || req.query?.['data.id'] || req.body?.id;
 
-    if (!paymentId) {
+    if (!rawPaymentId) {
       return res.status(200).send('OK (sem payment_id)');
     }
+
+    const paymentIdStr = String(rawPaymentId).trim();
+    if (!/^\d+$/.test(paymentIdStr)) {
+      console.warn('[SaaS Webhook] paymentId rejeitado por formato não numérico');
+      return res.status(200).send('OK (payment_id ignorado)');
+    }
+    const paymentId = encodeURIComponent(paymentIdStr);
 
     console.log(`[SaaS Webhook] Recebida notificação para paymentId: ${paymentId}`);
 
@@ -547,12 +554,13 @@ const handleSaaSWebhook = async (req, res) => {
     if (webhookSecret) {
       const isValid = verificarAssinaturaMP(req, webhookSecret);
       if (!isValid) {
-        console.warn(`[SaaS Webhook] Rejeitado: Assinatura HMAC inválida para paymentId ${paymentId} (IP: ${req.ip})`);
+        const safeIp = String(req.ip || '').replace(/[\r\n]/g, '');
+        console.warn(`[SaaS Webhook] Rejeitado: Assinatura HMAC inválida para paymentId ${paymentId} (IP: ${safeIp})`);
         logAuditEvent(
           0,
           'SaaS: Webhook Forjado Rejeitado',
-          `Tentativa de notificação de webhook com assinatura HMAC inválida (IP: ${req.ip}, Payment ID: ${paymentId})`,
-          req.ip
+          `Tentativa de notificação de webhook com assinatura HMAC inválida (IP: ${safeIp}, Payment ID: ${paymentId})`,
+          safeIp
         );
         return res.status(400).json({ error: 'Assinatura de webhook HMAC inválida.' });
       }

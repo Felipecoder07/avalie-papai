@@ -207,10 +207,11 @@ export default function App() {
         if (res.ok) {
           const data = await res.json();
           if (data.perfil) {
+            const sanitizeField = (val: unknown) => typeof val === 'string' ? val.replace(/[<>"'&]/g, '').trim() : '';
             const userObj = {
-              name: data.perfil.nome || '',
-              email: data.perfil.email || '',
-              phone: data.perfil.telefone || ''
+              name: sanitizeField(data.perfil.nome),
+              email: sanitizeField(data.perfil.email),
+              phone: sanitizeField(data.perfil.telefone)
             };
             setAthlete(userObj);
             localStorage.setItem('atleta_session', JSON.stringify(userObj));

@@ -194,8 +194,12 @@ async function resolverTokenWebhookMercadoPago(paymentId) {
 }
 
 async function liquidarWebhookMercadoPago(paymentId, token) {
-  if (!token) return;
-  const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+  if (!token || !paymentId) return;
+  const safePaymentId = String(paymentId).trim();
+  if (!/^\d+$/.test(safePaymentId)) return;
+  const encodedPaymentId = encodeURIComponent(safePaymentId);
+
+  const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${encodedPaymentId}`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   if (mpRes.ok) {
@@ -204,7 +208,7 @@ async function liquidarWebhookMercadoPago(paymentId, token) {
       const payload = {};
       if (mpData.pos_id) payload.device_id = mpData.pos_id;
       if (mpData.transaction_amount) payload.valor_pago = mpData.transaction_amount;
-      await processarLiquidacao(paymentId, payload);
+      await processarLiquidacao(safePaymentId, payload);
     }
   }
 }
@@ -318,7 +322,8 @@ router.get('/oauth/callback', async (req, res) => {
         }
       } else {
         const errData = await mpRes.json();
-        console.error('[OAuth Token Exchange Error]', errData);
+        const safeErrMsg = String(errData?.message || 'Erro na resposta do Mercado Pago').replace(/[\r\n]/g, '');
+        console.error(`[OAuth Token Exchange Error] ${safeErrMsg}`);
       }
     }
 
@@ -377,8 +382,9 @@ router.post('/oauth/exchange', async (req, res) => {
       }
     } else {
       const errData = await mpRes.json();
-      console.error('[OAuth Exchange Error]', errData);
-      return res.status(400).json({ error: errData.message || 'Erro ao trocar código de autorização.' });
+      const safeErrMsg = String(errData?.message || 'Erro ao trocar código de autorização.').replace(/[\r\n]/g, '');
+      console.error(`[OAuth Exchange Error] ${safeErrMsg}`);
+      return res.status(400).json({ error: safeErrMsg });
     }
   } catch (error) {
     console.error('[OAuth Exchange Error]', error);

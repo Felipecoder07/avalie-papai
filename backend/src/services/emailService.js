@@ -34,10 +34,13 @@ const sendEmail = async (to, subject, htmlContent) => {
       subject,
       html: htmlContent,
     });
-    console.log(`[SMTP] E-mail enviado com sucesso para ${to}. MessageId: ${info.messageId}`);
+    const safeTo = String(to || '').replace(/[\r\n]/g, '');
+    console.log(`[SMTP] E-mail enviado com sucesso para ${safeTo}. MessageId: ${info.messageId}`);
     return true;
   } catch (error) {
-    console.error(`[SMTP] Erro ao enviar e-mail para ${to}:`, error.message);
+    const safeTo = String(to || '').replace(/[\r\n]/g, '');
+    const safeErrMsg = String(error?.message || '').replace(/[\r\n]/g, '');
+    console.error(`[SMTP] Erro ao enviar e-mail para ${safeTo}:`, safeErrMsg);
     return false;
   }
 };

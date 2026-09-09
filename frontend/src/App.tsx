@@ -107,7 +107,8 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
         }
 
         if (active) {
-          localStorage.setItem('courtmanager_user', JSON.stringify(result.user));
+          const sanitizedUser = JSON.stringify(result.user).replace(/[<>\0]/g, '');
+          localStorage.setItem('courtmanager_user', sanitizedUser);
           setIsAuth(true);
           setChecking(false);
 
@@ -116,7 +117,8 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
           }
         }
       } catch (err) {
-        console.error('Erro na validação do Admin:', err);
+        const safeErr = String(err instanceof Error ? err.message : err).replace(/[\r\n]/g, '');
+        console.error('Erro na validação do Admin:', safeErr);
         if (active) {
           localStorage.removeItem('courtmanager_token');
           localStorage.removeItem('courtmanager_user');
@@ -209,9 +211,10 @@ function MasterGuard({ children }: { children: React.ReactNode }) {
     const urlUser = params.get('user');
 
     if (urlToken && urlUser) {
-      localStorage.setItem('courtmanager_token', urlToken);
+      const sanitizedToken = urlToken.replace(/[^a-zA-Z0-9._\-]/g, '').trim();
+      localStorage.setItem('courtmanager_token', sanitizedToken);
       try {
-        const decodedUser = decodeURIComponent(atob(urlUser));
+        const decodedUser = decodeURIComponent(atob(urlUser)).replace(/[<>\0]/g, '');
         localStorage.setItem('courtmanager_user', decodedUser);
       } catch (e) { }
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -236,7 +239,8 @@ function MasterGuard({ children }: { children: React.ReactNode }) {
 
         if (user.perfil === 'SuperAdmin') {
           if (active) {
-            localStorage.setItem('courtmanager_user', JSON.stringify(user));
+            const sanitizedUser = JSON.stringify(user).replace(/[<>\0]/g, '');
+            localStorage.setItem('courtmanager_user', sanitizedUser);
             setIsAuth(true);
             setChecking(false);
           }
@@ -244,7 +248,8 @@ function MasterGuard({ children }: { children: React.ReactNode }) {
           throw new Error('Acesso restrito ao Super Administrador');
         }
       } catch (err) {
-        console.error('Erro na validação do Master:', err);
+        const safeErr = String(err instanceof Error ? err.message : err).replace(/[\r\n]/g, '');
+        console.error('Erro na validação do Master:', safeErr);
         if (active) {
           localStorage.removeItem('courtmanager_token');
           localStorage.removeItem('courtmanager_user');
@@ -289,7 +294,8 @@ function ClientGuard({ children }: { children: React.ReactNode }) {
 
         if (user.perfil === 'Cliente') {
           if (active) {
-            localStorage.setItem('courtmanager_user', JSON.stringify(user));
+            const sanitizedUser = JSON.stringify(user).replace(/[<>\0]/g, '');
+            localStorage.setItem('courtmanager_user', sanitizedUser);
             setIsAuth(true);
             setChecking(false);
           }
@@ -297,7 +303,8 @@ function ClientGuard({ children }: { children: React.ReactNode }) {
           throw new Error('Acesso restrito ao Cliente');
         }
       } catch (err) {
-        console.error('Erro na validação do Cliente:', err);
+        const safeErr = String(err instanceof Error ? err.message : err).replace(/[\r\n]/g, '');
+        console.error('Erro na validação do Cliente:', safeErr);
         if (active) {
           localStorage.removeItem('courtmanager_token');
           localStorage.removeItem('courtmanager_user');

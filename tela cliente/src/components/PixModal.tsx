@@ -165,7 +165,14 @@ export default function PixModal({
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/public/tenant/${slug}/status-reserva/${pixPayload.reserva_id}`);
+        const safeSlug = String(slug || '').trim();
+        const reservaIdNum = Number(pixPayload.reserva_id);
+        if (!/^[a-zA-Z0-9_-]+$/.test(safeSlug) || !Number.isInteger(reservaIdNum) || reservaIdNum <= 0) {
+          return;
+        }
+        const encodedSlug = encodeURIComponent(safeSlug);
+        const encodedReservaId = encodeURIComponent(String(reservaIdNum));
+        const res = await fetch(`${BACKEND_URL}/api/public/tenant/${encodedSlug}/status-reserva/${encodedReservaId}`);
         if (!res.ok) return;
         const json = await res.json();
         if (json.status_pagamento === 'Pago') {

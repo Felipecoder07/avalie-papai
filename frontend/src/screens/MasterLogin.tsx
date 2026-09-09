@@ -44,12 +44,16 @@ export function MasterLogin() {
         return;
       }
 
-      localStorage.setItem('courtmanager_token', data.token);
-      localStorage.setItem('courtmanager_user', JSON.stringify(data.usuario));
+      const safeToken = typeof data.token === 'string' ? data.token.replace(/[^a-zA-Z0-9._\-]/g, '').trim() : '';
+      const safeUser = data.usuario ? JSON.stringify(data.usuario).replace(/[<>\0]/g, '') : '';
+
+      localStorage.setItem('courtmanager_token', safeToken);
+      localStorage.setItem('courtmanager_user', safeUser);
 
       navigate('/master/dashboard', { replace: true });
     } catch (err) {
-      console.error(err);
+      const safeErr = String(err instanceof Error ? err.message : err).replace(/[\r\n]/g, '');
+      console.error('Erro no login Master:', safeErr);
       setErrorMsg('Erro de conexão com o servidor.');
       setLoading(false);
     }

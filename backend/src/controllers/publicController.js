@@ -568,7 +568,8 @@ const agendarReservaPublica = async (req, res) => {
         pixData = await criarCobrancaPix(primeiraReservaId, valorTotalGeral, arena.id);
       }
     } catch (eGateway) {
-      console.warn('[Public Checkout Warning] Falha ao gerar Pix no gateway:', eGateway.message);
+      const safeMsg = String(eGateway?.message || '').replace(/[\r\n]/g, '');
+      console.warn('[Public Checkout Warning] Falha ao gerar Pix no gateway:', safeMsg);
     }
 
     if (!pixData && !hasChavePix) {
@@ -1509,7 +1510,8 @@ async function resolverPixDados(reserva, arena) {
         qrCode = pixData.qr_code;
       }
     } catch (eGateway) {
-      console.warn('[Public Controller Warning] Erro ao re-gerar Pix via gatewayService:', eGateway.message);
+      const safeMsg = String(eGateway?.message || '').replace(/[\r\n]/g, '');
+      console.warn('[Public Controller Warning] Erro ao re-gerar Pix via gatewayService:', safeMsg);
     }
   }
 

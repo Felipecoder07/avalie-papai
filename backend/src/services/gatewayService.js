@@ -228,9 +228,9 @@ const criarCobrancaPix = async (reserva_id, valor, tenant_id) => {
       };
     } else {
       const errData = await response.json();
-      console.error('[Mercado Pago API Error]', errData);
-      const detalheErro = errData.message || (errData.cause && errData.cause[0] ? errData.cause[0].description : 'Credenciais inválidas');
-      throw new Error(`Mercado Pago: ${detalheErro}`);
+      const safeMsg = String(errData?.message || (errData?.cause && errData.cause[0] ? errData.cause[0].description : 'Credenciais inválidas')).replace(/[\r\n]/g, '');
+      console.error(`[Mercado Pago API Error] ${safeMsg}`);
+      throw new Error(`Mercado Pago: ${safeMsg}`);
     }
   } catch (e) {
     if (e.message && e.message.startsWith('Mercado Pago:')) throw e;
@@ -352,8 +352,9 @@ const criarCobrancaMaquineta = async (reserva_id, valor, tenant_id) => {
       return { status: 'pending', gateway_ref: txRef, device_id: deviceId };
     } else {
       const errData = await response.json();
-      console.error('[Mercado Pago Point Cloud API Error]', errData);
-      throw new Error(errData.message || 'Erro ao enviar intenção para a maquineta.');
+      const safeMsg = String(errData?.message || 'Erro ao enviar intenção para a maquineta.').replace(/[\r\n]/g, '');
+      console.error(`[Mercado Pago Point Cloud API Error] ${safeMsg}`);
+      throw new Error(safeMsg);
     }
   } catch (e) {
     console.error('[Mercado Pago Point Cloud Exception]', e);
@@ -393,8 +394,9 @@ const estornarPagamentoPix = async (reserva_id, tenant_id) => {
       return { success: true, gateway_ref: tx.gateway_ref };
     } else {
       const errData = await response.json();
-      console.error('[Mercado Pago Refund Error]', errData);
-      return { success: false, reason: 'api_error', details: errData };
+      const safeMsg = String(errData?.message || 'Falha ao estornar pagamento').replace(/[\r\n]/g, '');
+      console.error(`[Mercado Pago Refund Error] ${safeMsg}`);
+      return { success: false, reason: 'api_error', details: { message: safeMsg } };
     }
   } catch (err) {
     console.error('[Mercado Pago Refund Exception]', err);

@@ -207,8 +207,9 @@ const liquidarFaturaSaaS = async (gatewayRef) => {
   `, [gatewayRef]);
 
   if (!fatura) {
-    console.warn(`[SaaS Billing] Webhook recebido para gateway_ref desconhecido: ${gatewayRef}`);
-    return { sucesso: false, mensagem: `Fatura com gateway_ref ${gatewayRef} não encontrada.` };
+    const safeRef = String(gatewayRef || '').replace(/[\r\n]/g, '');
+    console.warn(`[SaaS Billing] Webhook recebido para gateway_ref desconhecido: ${safeRef}`);
+    return { sucesso: false, mensagem: `Fatura com gateway_ref ${safeRef} não encontrada.` };
   }
 
   // IDEMPOTÊNCIA: já processado → não faz nada

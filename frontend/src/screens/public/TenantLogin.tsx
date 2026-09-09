@@ -49,13 +49,17 @@ export function TenantLogin() {
         return;
       }
 
-      localStorage.setItem('courtmanager_token', data.token);
-      localStorage.setItem('courtmanager_user', JSON.stringify(data.usuario));
+      const safeToken = typeof data.token === 'string' ? data.token.replace(/[^a-zA-Z0-9._\-]/g, '').trim() : '';
+      const safeUser = data.usuario ? JSON.stringify(data.usuario).replace(/[<>\0]/g, '') : '';
+      const sanitizeStr = (s: unknown): string => typeof s === 'string' ? s.replace(/[<>"'&]/g, '').trim() : '';
+
+      localStorage.setItem('courtmanager_token', safeToken);
+      localStorage.setItem('courtmanager_user', safeUser);
       if (data.usuario.arena_nome) {
-        localStorage.setItem('arena_nome', data.usuario.arena_nome);
+        localStorage.setItem('arena_nome', sanitizeStr(data.usuario.arena_nome));
       }
       if (data.usuario.arena_slug) {
-        localStorage.setItem('arena_slug', data.usuario.arena_slug);
+        localStorage.setItem('arena_slug', sanitizeStr(data.usuario.arena_slug));
       }
 
       if (data.usuario.arena_status === 0) {
