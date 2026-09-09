@@ -425,15 +425,15 @@
       
       <div class="legend-bar">
         <span style="font-weight:700; margin-right:8px;">Filtros:</span>
-        <div class="legend-item" onclick="filterType('all')"><span class="dot" style="background:#cbd5e1"></span> Todos</div>
-        <div class="legend-item" onclick="filterType('client-side')"><span class="dot dot-client"></span> Frontend Client-Side</div>
-        <div class="legend-item" onclick="filterType('server-side')"><span class="dot dot-server"></span> Backend Server-Side</div>
-        <div class="legend-item" onclick="filterType('database')"><span class="dot dot-db"></span> Banco de Dados SQLite</div>
-        <div class="legend-item" onclick="filterType('external')"><span class="dot dot-ext"></span> Serviços Externos</div>
+        <button type="button" class="legend-item" onclick="filterType('all')"><span class="dot" style="background:#cbd5e1"></span> Todos</button>
+        <button type="button" class="legend-item" onclick="filterType('client-side')"><span class="dot dot-client"></span> Frontend Client-Side</button>
+        <button type="button" class="legend-item" onclick="filterType('server-side')"><span class="dot dot-server"></span> Backend Server-Side</button>
+        <button type="button" class="legend-item" onclick="filterType('database')"><span class="dot dot-db"></span> Banco de Dados SQLite</button>
+        <button type="button" class="legend-item" onclick="filterType('external')"><span class="dot dot-ext"></span> Serviços Externos</button>
       </div>
 
       <div class="search-box">
-        <input type="text" id="searchInput" placeholder="Digite para buscar módulos, arquivos ou responsabilidades..." oninput="handleSearch()">
+        <input type="text" id="searchInput" aria-label="Buscar módulos" placeholder="Digite para buscar módulos, arquivos ou responsabilidades..." oninput="handleSearch()">
       </div>
 
       <div class="modules-grid" id="modulesGrid">
@@ -582,8 +582,8 @@
   </main>
 
   <!-- MODAL DE DETALHES -->
-  <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
-    <div class="modal-body" onclick="event.stopPropagation()">
+  <div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle" onclick="closeModal(event)" onkeydown="if(event.key==='Escape')closeModalDirect()">
+    <div class="modal-body" role="document" onclick="event.stopPropagation()" onkeydown="if(event.key==='Escape')closeModalDirect()">
       <button class="modal-close" onclick="closeModalDirect()">&times;</button>
       <div class="modal-type" id="modalType">TYPE</div>
       <h3 class="modal-title" id="modalTitle">Title</h3>

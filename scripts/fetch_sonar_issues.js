@@ -28,7 +28,8 @@ async function fetchAll() {
         allIssues.push(...data.issues);
       }
       const accumulated = allIssues.length;
-      console.log(`Page ${page}: fetched ${batchCount} issues (accumulated ${accumulated} of ${total})`);
+      const safeTotalCount = Number.isFinite(total) ? Math.floor(Math.abs(total)) : 0;
+      console.log(`Page ${page}: fetched ${batchCount} issues (accumulated ${accumulated} of ${safeTotalCount})`);
       if (allIssues.length >= total || data.issues.length === 0) {
         break;
       }
