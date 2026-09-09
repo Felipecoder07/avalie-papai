@@ -294,7 +294,12 @@ ${moneyEmoji} *Valor Pago:* R$ ${data.reserva.valor_total.toFixed(2)}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-5">
-      <div className="absolute inset-0 bg-charcoal/50 animate-fadeIn" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-charcoal/50 animate-fadeIn"
+        role="presentation"
+        onClick={onClose}
+        onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') onClose(); }}
+      />
       <div className="relative w-full max-w-[395px] bg-card rounded-3xl shadow-sheet animate-scaleIn max-h-[80vh] flex flex-col overflow-hidden">
         
         {/* Header */}

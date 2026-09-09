@@ -1698,7 +1698,9 @@ export function AdminAssinatura() {
             zIndex: 999,
             padding: '16px'
           }}
+          role="presentation"
           onClick={() => setModalPlanosOpen(false)}
+          onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setModalPlanosOpen(false); }}
         >
           <div
             style={{
@@ -1712,7 +1714,10 @@ export function AdminAssinatura() {
               maxHeight: '90vh',
               overflowY: 'auto'
             }}
+            role="dialog"
+            aria-modal="true"
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
           >
             {/* Fechar */}
             <button
@@ -1828,7 +1833,9 @@ export function AdminAssinatura() {
             zIndex: 9999,
             padding: '16px'
           }}
+          role="presentation"
           onClick={() => setModalReciboOpen(false)}
+          onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setModalReciboOpen(false); }}
         >
           <div
             style={{
@@ -1842,7 +1849,10 @@ export function AdminAssinatura() {
               maxHeight: '90vh',
               overflowY: 'auto'
             }}
+            role="dialog"
+            aria-modal="true"
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
           >
             <button
               className="no-print"

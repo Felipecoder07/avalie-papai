@@ -1436,8 +1436,13 @@ export function AdminConfiguracoes() {
       </div>
 
       {/* MODAL: NOVA QUADRA */}
-      <div className={`modal-overlay ${activeModal === 'nova-quadra' ? 'open' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-nq-title" onClick={() => setActiveModal(null)}>
-        <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`modal-overlay ${activeModal === 'nova-quadra' ? 'open' : ''}`}
+        role="presentation"
+        onClick={() => setActiveModal(null)}
+        onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setActiveModal(null); }}
+      >
+        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-nq-title" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
           {planoInfo && planoInfo.plano.max_quadras > 0 && quadras.filter(q => q.status !== 'Excluida').length >= planoInfo.plano.max_quadras ? (
             <div>
               <div className="modal-header">
@@ -1715,8 +1720,13 @@ export function AdminConfiguracoes() {
       </div>
 
       {/* MODAL: EDITAR QUADRA */}
-      <div className={`modal-overlay ${activeModal === 'editar-quadra' ? 'open' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-eq-title" onClick={() => setActiveModal(null)}>
-        <form className="modal" onSubmit={handleSaveQuadra} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`modal-overlay ${activeModal === 'editar-quadra' ? 'open' : ''}`}
+        role="presentation"
+        onClick={() => setActiveModal(null)}
+        onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setActiveModal(null); }}
+      >
+        <form className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-eq-title" onSubmit={handleSaveQuadra} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
           <div className="modal-header">
             <h2 className="modal-title" id="modal-eq-title">Editar Quadra</h2>
             <button type="button" className="modal-close" aria-label="Fechar" onClick={() => setActiveModal(null)}>✕</button>
@@ -1926,8 +1936,13 @@ export function AdminConfiguracoes() {
       </div>
 
       {/* MODAL: CRIAR/EDITAR USUÁRIO */}
-      <div className={`modal-overlay ${activeModal === 'usuario' ? 'open' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-u-title" onClick={() => setActiveModal(null)}>
-        <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`modal-overlay ${activeModal === 'usuario' ? 'open' : ''}`}
+        role="presentation"
+        onClick={() => setActiveModal(null)}
+        onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setActiveModal(null); }}
+      >
+        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-u-title" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
           {!nuId && planoInfo && planoInfo.plano.max_usuarios > 0 && usuarios.length >= planoInfo.plano.max_usuarios ? (
             <div>
               <div className="modal-header">
@@ -2072,8 +2087,13 @@ export function AdminConfiguracoes() {
       </div>
 
       {/* MODAL: NOVO MOTIVO DE CANCELAMENTO */}
-      <div className={`modal-overlay ${activeModal === 'motivo' ? 'open' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-motivo-title" onClick={() => setActiveModal(null)}>
-        <form className="modal" onSubmit={handleAddMotivo} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`modal-overlay ${activeModal === 'motivo' ? 'open' : ''}`}
+        role="presentation"
+        onClick={() => setActiveModal(null)}
+        onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setActiveModal(null); }}
+      >
+        <form className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-motivo-title" onSubmit={handleAddMotivo} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
           <div className="modal-header">
             <h2 className="modal-title" id="modal-motivo-title">Adicionar Motivo de Cancelamento</h2>
             <button type="button" className="modal-close" aria-label="Fechar" onClick={() => setActiveModal(null)}>✕</button>

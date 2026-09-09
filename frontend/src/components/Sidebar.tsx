@@ -47,8 +47,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     <aside className={`${collapsed ? 'w-[68px]' : 'w-[248px]'} shrink-0 h-screen sticky top-0 bg-charcoal text-off-white flex flex-col transition-[width] duration-200 ease-out z-20`}>
       {/* Brand */}
       <div
-        className="px-4 h-16 flex items-center gap-2.5 border-b border-white/10 cursor-pointer"
+        className="px-4 h-16 flex items-center gap-2.5 border-b border-white/10 cursor-pointer text-left"
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
         title="Toggle Menu"
       >
         <div className="w-9 h-9 rounded-lg bg-off-white text-charcoal flex items-center justify-center font-bold text-sm shrink-0">

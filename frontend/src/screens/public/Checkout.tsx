@@ -344,10 +344,15 @@ export function Checkout() {
                       <label
                         key={p.id}
                         className={`plan-option ${isSelected ? 'selected' : ''}`}
-                        onClick={() => setFormData(prev => ({ ...prev, plano: String(p.id) }))}
                         style={{ cursor: 'pointer' }}
                       >
-                        <input type="radio" name="plano" value={p.id} checked={isSelected} readOnly />
+                        <input
+                          type="radio"
+                          name="plano"
+                          value={p.id}
+                          checked={isSelected}
+                          onChange={() => setFormData(prev => ({ ...prev, plano: String(p.id) }))}
+                        />
                         <div className="plan-option-info">
                           <div className="plan-name">{p.nome}</div>
                           <div className="plan-desc">Até {p.max_quadras} quadras — Até {p.max_usuarios} usuários</div>

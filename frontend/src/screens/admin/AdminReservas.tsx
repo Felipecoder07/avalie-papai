@@ -142,7 +142,10 @@ export const AdminGradeSlot: React.FC<AdminGradeSlotProps> = ({
         className="gt-slot s-blocked"
         title={blq.motivo || 'Bloqueado'}
         style={{ gridColumn: idx + 2, gridRow: row, cursor: 'pointer' }}
+        role="button"
+        tabIndex={0}
         onClick={() => onCellClick(col.quadra_id, col.data, hourStr, undefined, blq)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onCellClick(col.quadra_id, col.data, hourStr, undefined, blq); }}
       >
         <span className="slot-name">{blq.motivo || 'Bloqueado'}</span>
       </div>
@@ -172,7 +175,10 @@ export const AdminGradeSlot: React.FC<AdminGradeSlotProps> = ({
           key={col.id}
           className={`gt-slot ${cssClass}`}
           style={{ gridColumn: idx + 2, gridRow: `${row} / span ${span}` }}
+          role="button"
+          tabIndex={0}
           onClick={() => onCellClick(col.quadra_id, col.data, hourStr, res)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onCellClick(col.quadra_id, col.data, hourStr, res); }}
         >
           <span className="slot-name">
             {res.cliente_nome}
@@ -204,7 +210,10 @@ export const AdminGradeSlot: React.FC<AdminGradeSlotProps> = ({
       key={col.id}
       className="gt-slot s-available"
       style={{ gridColumn: idx + 2, gridRow: row }}
+      role="button"
+      tabIndex={0}
       onClick={() => onCellClick(col.quadra_id, col.data, hourStr)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onCellClick(col.quadra_id, col.data, hourStr); }}
     >
       <span className="slot-label">Livre</span>
     </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { safeStorage } from '../utils/safeStorage';
 import { Card, Button, Input, Field } from '../components/ui';
 
 export function MasterLogin() {
@@ -47,8 +48,8 @@ export function MasterLogin() {
       const safeToken = typeof data.token === 'string' ? data.token.replace(/[^a-zA-Z0-9._\-]/g, '').trim() : '';
       const safeUser = data.usuario ? JSON.stringify(data.usuario).replace(/[<>\0]/g, '') : '';
 
-      localStorage.setItem('courtmanager_token', safeToken);
-      localStorage.setItem('courtmanager_user', safeUser);
+      safeStorage.setItem('courtmanager_token', safeToken);
+      safeStorage.setItem('courtmanager_user', safeUser);
 
       navigate('/master/dashboard', { replace: true });
     } catch (err) {

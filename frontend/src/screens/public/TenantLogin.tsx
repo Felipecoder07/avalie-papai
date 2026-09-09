@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { safeStorage } from '../../utils/safeStorage';
 import '../../assets/css/landing.css';
 import '../../assets/css/tenant-login.css';
 
@@ -53,13 +54,13 @@ export function TenantLogin() {
       const safeUser = data.usuario ? JSON.stringify(data.usuario).replace(/[<>\0]/g, '') : '';
       const sanitizeStr = (s: unknown): string => typeof s === 'string' ? s.replace(/[<>"'&]/g, '').trim() : '';
 
-      localStorage.setItem('courtmanager_token', safeToken);
-      localStorage.setItem('courtmanager_user', safeUser);
+      safeStorage.setItem('courtmanager_token', safeToken);
+      safeStorage.setItem('courtmanager_user', safeUser);
       if (data.usuario.arena_nome) {
-        localStorage.setItem('arena_nome', sanitizeStr(data.usuario.arena_nome));
+        safeStorage.setItem('arena_nome', sanitizeStr(data.usuario.arena_nome));
       }
       if (data.usuario.arena_slug) {
-        localStorage.setItem('arena_slug', sanitizeStr(data.usuario.arena_slug));
+        safeStorage.setItem('arena_slug', sanitizeStr(data.usuario.arena_slug));
       }
 
       if (data.usuario.arena_status === 0) {

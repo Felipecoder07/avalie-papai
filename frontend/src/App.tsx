@@ -27,6 +27,7 @@ import { AdminRelatorios } from './screens/admin/AdminRelatorios';
 import { AdminAssinatura } from './screens/admin/AdminAssinatura';
 import { AdminConfiguracoes } from './screens/admin/AdminConfiguracoes';
 import { AdminAuditoria } from './screens/admin/AdminAuditoria';
+import { safeStorage } from './utils/safeStorage';
 
 interface AdminSessionResult {
   blockedMsg?: string;
@@ -66,6 +67,39 @@ async function fetchAdminSession(token: string): Promise<AdminSessionResult> {
   return { user };
 }
 
+function processAdminSessionResult(
+  result: AdminSessionResult,
+  handlers: {
+    setBlockedMsg: (msg: string) => void;
+    setMaintMsg: (msg: string) => void;
+    setIsAuth: (auth: boolean) => void;
+    setChecking: (chk: boolean) => void;
+    navigate: (url: string, opt?: { replace?: boolean }) => void;
+  }
+) {
+  if (result.blockedMsg) {
+    handlers.setBlockedMsg(result.blockedMsg);
+    handlers.setChecking(false);
+    return;
+  }
+  if (result.maintMsg) {
+    handlers.setMaintMsg(result.maintMsg);
+    handlers.setChecking(false);
+    return;
+  }
+  if (result.error || !result.user) {
+    throw new Error(result.error || 'Sessão inválida');
+  }
+
+  safeStorage.setItem('courtmanager_user', JSON.stringify(result.user));
+  handlers.setIsAuth(true);
+  handlers.setChecking(false);
+
+  if (result.user.arena_status === 0 && window.location.pathname !== '/admin/assinatura') {
+    handlers.navigate('/admin/assinatura', { replace: true });
+  }
+}
+
 // Componente Wrapper para proteger as rotas do Admin da Arena
 function AdminGuard({ children }: { children: React.ReactNode }) {
   const [isAuth, setIsAuth] = useState(false);
@@ -77,7 +111,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
     const verifySession = async () => {
-      const token = localStorage.getItem('courtmanager_token');
+      const token = safeStorage.getItem('courtmanager_token');
       if (!token) {
         if (active) navigate('/login', { replace: true });
         return;
@@ -85,43 +119,21 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
 
       try {
         const result = await fetchAdminSession(token);
-
-        if (result.blockedMsg) {
-          if (active) {
-            setBlockedMsg(result.blockedMsg);
-            setChecking(false);
-          }
-          return;
-        }
-
-        if (result.maintMsg) {
-          if (active) {
-            setMaintMsg(result.maintMsg);
-            setChecking(false);
-          }
-          return;
-        }
-
-        if (result.error || !result.user) {
-          throw new Error(result.error || 'Sessão inválida');
-        }
-
         if (active) {
-          const sanitizedUser = JSON.stringify(result.user).replace(/[<>\0]/g, '');
-          localStorage.setItem('courtmanager_user', sanitizedUser);
-          setIsAuth(true);
-          setChecking(false);
-
-          if (result.user.arena_status === 0 && window.location.pathname !== '/admin/assinatura') {
-            navigate('/admin/assinatura', { replace: true });
-          }
+          processAdminSessionResult(result, {
+            setBlockedMsg,
+            setMaintMsg,
+            setIsAuth,
+            setChecking,
+            navigate
+          });
         }
       } catch (err) {
         const safeErr = String(err instanceof Error ? err.message : err).replace(/[\r\n]/g, '');
         console.error('Erro na validação do Admin:', safeErr);
         if (active) {
-          localStorage.removeItem('courtmanager_token');
-          localStorage.removeItem('courtmanager_user');
+          safeStorage.removeItem('courtmanager_token');
+          safeStorage.removeItem('courtmanager_user');
           navigate('/login', { replace: true });
         }
       }
@@ -211,17 +223,17 @@ function MasterGuard({ children }: { children: React.ReactNode }) {
     const urlUser = params.get('user');
 
     if (urlToken && urlUser) {
-      const sanitizedToken = urlToken.replace(/[^a-zA-Z0-9._\-]/g, '').trim();
-      localStorage.setItem('courtmanager_token', sanitizedToken);
+      const sanitizedToken = urlToken.replace(/[^a-zA-Z0-9._-]/g, '').trim();
+      safeStorage.setItem('courtmanager_token', sanitizedToken);
       try {
         const decodedUser = decodeURIComponent(atob(urlUser)).replace(/[<>\0]/g, '');
-        localStorage.setItem('courtmanager_user', decodedUser);
+        safeStorage.setItem('courtmanager_user', decodedUser);
       } catch (e) { }
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
     const verifySession = async () => {
-      const token = localStorage.getItem('courtmanager_token');
+      const token = safeStorage.getItem('courtmanager_token');
       if (!token) {
         if (active) navigate('/master-login', { replace: true });
         return;
@@ -239,8 +251,7 @@ function MasterGuard({ children }: { children: React.ReactNode }) {
 
         if (user.perfil === 'SuperAdmin') {
           if (active) {
-            const sanitizedUser = JSON.stringify(user).replace(/[<>\0]/g, '');
-            localStorage.setItem('courtmanager_user', sanitizedUser);
+            safeStorage.setItem('courtmanager_user', JSON.stringify(user));
             setIsAuth(true);
             setChecking(false);
           }
@@ -251,8 +262,8 @@ function MasterGuard({ children }: { children: React.ReactNode }) {
         const safeErr = String(err instanceof Error ? err.message : err).replace(/[\r\n]/g, '');
         console.error('Erro na validação do Master:', safeErr);
         if (active) {
-          localStorage.removeItem('courtmanager_token');
-          localStorage.removeItem('courtmanager_user');
+          safeStorage.removeItem('courtmanager_token');
+          safeStorage.removeItem('courtmanager_user');
           navigate('/master-login', { replace: true });
         }
       }
@@ -276,7 +287,7 @@ function ClientGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
     const verifySession = async () => {
-      const token = localStorage.getItem('courtmanager_token');
+      const token = safeStorage.getItem('courtmanager_token');
       if (!token) {
         if (active) navigate('/login', { replace: true });
         return;
@@ -294,8 +305,7 @@ function ClientGuard({ children }: { children: React.ReactNode }) {
 
         if (user.perfil === 'Cliente') {
           if (active) {
-            const sanitizedUser = JSON.stringify(user).replace(/[<>\0]/g, '');
-            localStorage.setItem('courtmanager_user', sanitizedUser);
+            safeStorage.setItem('courtmanager_user', JSON.stringify(user));
             setIsAuth(true);
             setChecking(false);
           }
@@ -306,8 +316,8 @@ function ClientGuard({ children }: { children: React.ReactNode }) {
         const safeErr = String(err instanceof Error ? err.message : err).replace(/[\r\n]/g, '');
         console.error('Erro na validação do Cliente:', safeErr);
         if (active) {
-          localStorage.removeItem('courtmanager_token');
-          localStorage.removeItem('courtmanager_user');
+          safeStorage.removeItem('courtmanager_token');
+          safeStorage.removeItem('courtmanager_user');
           navigate('/login', { replace: true });
         }
       }

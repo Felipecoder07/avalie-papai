@@ -12,6 +12,7 @@ import LoginScreen from './components/LoginScreen';
 import MyProfileModal from './components/MyProfileModal';
 import { ArrowRight, ShoppingBag, ShieldCheck, X, MessageCircle, MapPin, ExternalLink, AlertCircle } from 'lucide-react';
 import { brl, getLocalDateISO, formatLongDate, formatShortDate } from './lib/format';
+import { safeStorage } from './utils/safeStorage';
 
 import { BACKEND_URL } from './lib/backendUrl';
 
@@ -214,7 +215,7 @@ export default function App() {
               phone: sanitizeField(data.perfil.telefone)
             };
             setAthlete(userObj);
-            localStorage.setItem('atleta_session', JSON.stringify(userObj));
+            safeStorage.setItem('atleta_session', JSON.stringify(userObj));
           }
         } else if (res.status === 401 || res.status === 403) {
           setAthlete(null);
@@ -844,11 +845,16 @@ export default function App() {
       {pendingNavigation && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-charcoal/60 backdrop-blur-sm animate-fadeIn"
+          role="presentation"
           onClick={() => setPendingNavigation(null)}
+          onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setPendingNavigation(null); }}
         >
           <div 
             className="w-full max-w-sm bg-card rounded-3xl p-6 shadow-2xl border border-edge text-center animate-slideUp"
+            role="dialog"
+            aria-modal="true"
             onClick={e => e.stopPropagation()}
+            onKeyDown={e => e.stopPropagation()}
           >
             <div className="w-12 h-12 rounded-full bg-amber-500/15 text-amber-500 flex items-center justify-center mx-auto mb-4">
               <AlertCircle size={26} />
@@ -892,11 +898,16 @@ export default function App() {
       {pendingSlotForSport && (
         <div 
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-charcoal/50 backdrop-blur-sm animate-fadeIn"
+          role="presentation"
           onClick={() => setPendingSlotForSport(null)}
+          onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setPendingSlotForSport(null); }}
         >
           <div 
             className="w-full max-w-md bg-card rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-edge animate-slideUp"
+            role="dialog"
+            aria-modal="true"
             onClick={e => e.stopPropagation()}
+            onKeyDown={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
               <div>

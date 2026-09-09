@@ -109,7 +109,9 @@ export default function CheckoutDrawer({
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
       <div
         className="absolute inset-0 bg-charcoal/40 animate-fadeIn"
+        role="presentation"
         onClick={onClose}
+        onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') onClose(); }}
       />
       <div
         style={{

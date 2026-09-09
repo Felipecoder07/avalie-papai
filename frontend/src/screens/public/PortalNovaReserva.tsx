@@ -342,10 +342,11 @@ export function PortalNovaReserva() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
                   {quadrasDisponiveis.map(q => (
-                    <div
+                    <button
+                      type="button"
                       key={q.id}
                       onClick={() => setSelQuad(q)}
-                      className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${selQuad?.id === q.id
+                      className={`p-4 rounded-xl border-2 cursor-pointer transition-all text-left w-full ${selQuad?.id === q.id
                           ? 'border-forest bg-forest/5 shadow-md'
                           : 'border-charcoal/10 hover:border-forest/45'
                         }`}
@@ -355,7 +356,7 @@ export function PortalNovaReserva() {
                       <span className="text-lg font-extrabold text-forest mt-3 block">
                         R$ {q.preco_base.toFixed(2).replace('.', ',')}
                       </span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}

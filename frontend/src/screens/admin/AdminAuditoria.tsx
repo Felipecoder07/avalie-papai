@@ -381,9 +381,17 @@ export function AdminAuditoria() {
               >
                 {/* Opção Todos os Eventos */}
                 <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => {
                     setEvento('');
                     setEventDropdownOpen(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      setEvento('');
+                      setEventDropdownOpen(false);
+                    }
                   }}
                   style={{
                     padding: '8px 12px',
@@ -424,9 +432,17 @@ export function AdminAuditoria() {
                       return (
                         <div
                           key={item.value}
+                          role="button"
+                          tabIndex={0}
                           onClick={() => {
                             setEvento(item.value);
                             setEventDropdownOpen(false);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              setEvento(item.value);
+                              setEventDropdownOpen(false);
+                            }
                           }}
                           style={{
                             padding: '7px 12px',
@@ -571,8 +587,20 @@ export function AdminAuditoria() {
 
       {/* Modal de Detalhes do Log de Auditoria */}
       {selectedLog && (
-        <div className="modal-overlay open" onClick={() => setSelectedLog(null)}>
-          <div className="modal modal--flush" style={{ maxWidth: '580px' }} onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay open"
+          role="presentation"
+          onClick={() => setSelectedLog(null)}
+          onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setSelectedLog(null); }}
+        >
+          <div
+            className="modal modal--flush"
+            style={{ maxWidth: '580px' }}
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '18px' }}>🛡️</span>

@@ -664,7 +664,6 @@ footer {
 .arena-card-img {
   width: 100%; height: 160px;
   object-fit: cover;
-  display: block;
   border-bottom: 1px solid var(--border-warm);
   background: linear-gradient(135deg, rgba(251,191,36,0.15), rgba(167,139,250,0.1));
   display: flex;

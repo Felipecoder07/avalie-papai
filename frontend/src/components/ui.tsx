@@ -27,7 +27,12 @@ export function Modal({ open, onClose, title, description, children, footer, siz
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
-      <div className="absolute inset-0 bg-charcoal/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-charcoal/40 backdrop-blur-[2px]"
+        role="presentation"
+        onClick={onClose}
+        onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') onClose(); }}
+      />
       <div
         ref={ref}
         className={`relative w-full ${maxW} bg-off-white rounded-2xl shadow-overlay animate-scale-in border border-border-passive`}

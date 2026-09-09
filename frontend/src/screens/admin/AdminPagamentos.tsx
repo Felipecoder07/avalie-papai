@@ -965,9 +965,17 @@ export function AdminPagamentos() {
                       className={`hist-item p-2 rounded-md mb-1 cursor-pointer flex justify-between items-center ${
                         pagamentoEstornoId === p.id ? 'bg-cream-surface border border-primary' : 'hover:bg-cream-surface/50 border border-transparent'
                       }`}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => {
                         setPagamentoEstornoId(p.id);
                         setEstpValor(formatFloatToCurrencyInput(p.valor));
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          setPagamentoEstornoId(p.id);
+                          setEstpValor(formatFloatToCurrencyInput(p.valor));
+                        }
                       }}
                     >
                       <span className="text-xs text-charcoal">{p.metodo} — {new Date(p.registrado_em).toLocaleDateString('pt-BR')}</span>

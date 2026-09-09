@@ -128,7 +128,12 @@ export function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
 
         {showPortalMenu && (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setShowPortalMenu(false)} />
+            <div
+              className="fixed inset-0 z-40"
+              role="presentation"
+              onClick={() => setShowPortalMenu(false)}
+              onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setShowPortalMenu(false); }}
+            />
             <div className="absolute right-0 mt-2 w-80 bg-off-white border border-border-passive rounded-xl shadow-lg p-4 z-50 animate-scale-in">
               <div className="flex items-center justify-between border-b border-border-passive pb-2 mb-3">
                 <span className="text-xs font-bold text-charcoal flex items-center gap-1.5">
@@ -202,7 +207,12 @@ export function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
 
         {showDropdown && (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
+            <div
+              className="fixed inset-0 z-40"
+              role="presentation"
+              onClick={() => setShowDropdown(false)}
+              onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') setShowDropdown(false); }}
+            />
             <div className="absolute right-0 mt-2 w-80 bg-off-white border border-border-passive rounded-xl shadow-lg p-4 z-50 animate-scale-in">
               <div className="flex items-center justify-between border-b border-border-passive pb-2 mb-3">
                 <span className="text-xs font-bold text-charcoal flex items-center gap-1.5">
