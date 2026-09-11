@@ -8,3 +8,4 @@ cloudflared.exe
 *.timestamp-*.mjs
 dist/
 build/
+artifacts/homologacao/

@@ -140,6 +140,8 @@ export function AdminConfiguracoes() {
   // Configuração Maquineta
   const [maquinetaId, setMaquinetaId] = useState('');
   const [accessToken, setAccessToken] = useState('');
+  const [gatewayConnected, setGatewayConnected] = useState(false);
+  const [loadingGateway, setLoadingGateway] = useState(true);
   const [publicKey, setPublicKey] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
 
@@ -327,15 +329,18 @@ export function AdminConfiguracoes() {
   };
 
   const loadMaquineta = async () => {
+    setLoadingGateway(true);
     try {
-      const data = await request('/api/gateway/pos');
+      const data = await request('/api/pagamentos/gateway/maquineta');
       if (data) {
-        setMaquinetaId(data.pos_serial_number || '');
-        setAccessToken(data.access_token || '');
-        setPublicKey(data.public_key || '');
+        setMaquinetaId(data.gateway_device_id || '');
+        setAccessToken('');
+        setGatewayConnected(data.gateway_connected === true);
+        setPublicKey(data.gateway_public_key || '');
+        setLoadingGateway(false);
       }
     } catch {
-      // Configuração opcional
+      showToast('Não foi possível carregar a configuração de pagamentos. Recarregue a página antes de editar.', 'error');
     }
   };
 
@@ -369,14 +374,19 @@ export function AdminConfiguracoes() {
       handleTabChange('pagamentos');
       fetch('/api/pagamentos/gateway/oauth/exchange', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ code, state })
       })
-        .then(res => res.json())
+        .then(async res => {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Erro ao conectar a conta Mercado Pago.');
+          return data;
+        })
         .then(data => {
-          if (data.accessToken) {
-            setAccessToken(data.accessToken);
-            if (data.publicKey) setPublicKey(data.publicKey);
+          if (data.gateway_connected) {
+            setAccessToken('');
+            setGatewayConnected(true);
+            loadMaquineta();
             showToast('✓ Conta do Mercado Pago conectada com sucesso!', 'success');
             loadArena();
             window.history.replaceState({}, document.title, window.location.pathname + '?tab=pagamentos');
@@ -586,15 +596,18 @@ export function AdminConfiguracoes() {
         body: JSON.stringify(arena)
       });
       
-      // Salva o Serial Number e Credenciais da maquineta física
-      await request('/api/pagamentos/gateway/maquineta', {
-        method: 'POST',
-        body: JSON.stringify({ 
-          gateway_device_id: maquinetaId,
-          gateway_access_token: accessToken,
-          gateway_public_key: publicKey
-        })
-      });
+      // Não altera configurações que ainda não foram carregadas.
+      if (!loadingGateway) {
+        await request('/api/pagamentos/gateway/maquineta', {
+          method: 'POST',
+          body: JSON.stringify({
+            gateway_device_id: maquinetaId,
+            ...(accessToken.trim() ? { gateway_access_token: accessToken.trim() } : {}),
+            gateway_public_key: publicKey
+          })
+        });
+        await loadMaquineta();
+      }
 
       if (!silent) {
         showToast('Configurações salvas com sucesso!', 'success');
@@ -1021,7 +1034,7 @@ export function AdminConfiguracoes() {
                     Conecte a conta bancária da sua arena em 1 clique sem precisar copiar chaves ou códigos manuais.
                   </p>
                 </div>
-                {accessToken ? (
+                {gatewayConnected ? (
                   <span style={{ background: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
                     ✓ Conta Conectada
                   </span>
@@ -1064,10 +1077,10 @@ export function AdminConfiguracoes() {
                     }
                   }}
                 >
-                  {accessToken ? '🔗 Reautorizar ou Trocar Conta' : '🔗 Conectar com Mercado Pago'}
+                  {gatewayConnected ? '🔗 Reautorizar ou Trocar Conta' : '🔗 Conectar com Mercado Pago'}
                 </button>
 
-                {accessToken && (
+                {gatewayConnected && (
                   <button
                     type="button"
                     style={{
@@ -1091,6 +1104,7 @@ export function AdminConfiguracoes() {
                         if (!res.ok) throw new Error(data.error || 'Erro ao desconectar.');
                         
                         setAccessToken('');
+                        setGatewayConnected(false);
                         setPublicKey('');
                         showToast('Conta Mercado Pago desconectada com sucesso!', 'success');
                         loadArena();
@@ -1114,12 +1128,14 @@ export function AdminConfiguracoes() {
               <input 
                 type="password" 
                 id="arena-token" 
-                placeholder="Ex: APP_USR-1234567890..."
+                placeholder={gatewayConnected ? 'Chave já cadastrada. Preencha somente para substituir.' : 'Ex: APP_USR-1234567890...'}
+                autoComplete="new-password"
+                disabled={loadingGateway}
                 value={accessToken}
                 onChange={(e) => setAccessToken(e.target.value)}
               />
               <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'block', marginTop: '4px' }}>
-                Chave secreta obtida no painel da conta bancária da Arena. Garante que os pagamentos caiam direto na sua conta.
+                Deixe em branco para manter a chave cadastrada. Para remover a conexão, use Desconectar Conta.
               </span>
             </div>
 
@@ -1128,6 +1144,7 @@ export function AdminConfiguracoes() {
               <input 
                 type="text" 
                 id="arena-public-key" 
+                disabled={loadingGateway}
                 placeholder="Ex: APP_USR-9876543210..."
                 value={publicKey}
                 onChange={(e) => setPublicKey(e.target.value)}
@@ -1189,6 +1206,7 @@ export function AdminConfiguracoes() {
                 id="arena-maquineta" 
                 placeholder="Ex: MP-POINT-12345"
                 value={maquinetaId}
+                disabled={loadingGateway}
                 onChange={(e) => setMaquinetaId(e.target.value)}
               />
               <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'block', marginTop: '4px' }}>
@@ -1197,7 +1215,7 @@ export function AdminConfiguracoes() {
             </div>
 
             <div style={{ marginTop: 'var(--s-4)', display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="submit" className="btn-primary" id="btn-salvar-pagamentos">Salvar Configurações de Pagamento</button>
+              <button type="submit" className="btn-primary" id="btn-salvar-pagamentos" disabled={loadingGateway}>Salvar Configurações de Pagamento</button>
             </div>
           </form>
 

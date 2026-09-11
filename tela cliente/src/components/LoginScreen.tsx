@@ -14,9 +14,29 @@ interface Props {
   onClose?: () => void;
 }
 
+interface GoogleTokenResponse {
+  access_token?: string;
+  [key: string]: unknown;
+}
+
+interface GoogleTokenClient {
+  requestAccessToken: (options?: { prompt?: string }) => void;
+}
+
 declare global {
   interface Window {
-    google?: any;
+    google?: {
+      accounts?: {
+        oauth2?: {
+          initTokenClient: (config: {
+            client_id: string;
+            scope: string;
+            callback: (response: GoogleTokenResponse) => void | Promise<void>;
+            error_callback?: (error: unknown) => void;
+          }) => GoogleTokenClient;
+        };
+      };
+    };
   }
 }
 
@@ -52,7 +72,7 @@ export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly
         const client = window.google.accounts.oauth2.initTokenClient({
           client_id: GOOGLE_CLIENT_ID,
           scope: 'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-          callback: async (tokenResponse: any) => {
+          callback: async (tokenResponse: GoogleTokenResponse) => {
             if (tokenResponse && tokenResponse.access_token) {
               try {
                 const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -92,7 +112,7 @@ export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly
             }
             setLoading(null);
           },
-          error_callback: (err: any) => {
+          error_callback: (err: unknown) => {
             console.error('Google OAuth Error Callback:', err);
             setLoading(null);
           }

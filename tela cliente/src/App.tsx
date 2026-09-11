@@ -293,9 +293,9 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data.quadras && Array.isArray(data.quadras) && data.quadras.length > 0) {
-          const mapped: Court[] = data.quadras.map((q: any) => {
+          const mapped: Court[] = data.quadras.map((q: { id: number | string; nome: string; tipo?: string; preco_base?: number; modalidades?: Array<{ nome: string; preco?: number } | string> }) => {
             const rawModalidades = Array.isArray(q.modalidades) ? q.modalidades : [q.tipo || 'Beach Tennis'];
-            const sportPricing = rawModalidades.map((m: any) => {
+            const sportPricing = rawModalidades.map((m: { nome: string; preco?: number } | string) => {
               if (typeof m === 'string') return { nome: m, preco: q.preco_base || 80 };
               return { nome: m.nome, preco: Number(m.preco != null ? m.preco : q.preco_base || 80) };
             });
@@ -386,7 +386,7 @@ export default function App() {
           const activeCourt = courts.find(c => c.id === courtId);
           const activeSport = selectedSport !== 'Todos' ? selectedSport : (activeCourt?.modalities?.[0] || 'Beach Tennis');
           
-          const mappedSlots: Slot[] = qData.slots.map((s: any) => {
+          const mappedSlots: Slot[] = qData.slots.map((s: { hora_inicio: string; hora_fim: string; preco: number; status: string }) => {
             const hInt = Number.parseInt(s.hora_inicio.split(':')[0], 10);
             const block = hInt < 12 ? 'manha' : hInt < 18 ? 'tarde' : 'noite';
             return {
@@ -715,7 +715,9 @@ export default function App() {
             reservas_ids: pixPayload.reservas_ids 
           })
         });
-      } catch { }
+      } catch (err) {
+        console.warn('Falha ao cancelar reserva pendente:', err);
+      }
     }
   };
 

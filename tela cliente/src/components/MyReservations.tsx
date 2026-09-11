@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { X, Search, CalendarCheck, Clock, Loader2, Ticket, QrCode, ArrowRight, Ban, CheckCircle2, MessageCircle, AlertTriangle, ShieldCheck, Printer, Share2, FileText, Building2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { X, Search, CalendarCheck, Clock, Loader2, Ticket, QrCode, ArrowRight, Ban, CheckCircle2, MessageCircle, AlertTriangle, ShieldCheck, Printer, Share2, FileText } from 'lucide-react';
 import { brl, maskPhone, formatLongDate } from '../lib/format';
 
 
@@ -96,7 +96,7 @@ export default function MyReservations({ slug, athlete, open, onClose, onPayPend
     };
   }, [open]);
 
-  const fetchReservas = async (customPhone?: string) => {
+  const fetchReservas = useCallback(async (customPhone?: string) => {
     setLoading(true);
     try {
       const token = localStorage.getItem('courtmanager_athlete_token') || localStorage.getItem('atleta_token');
@@ -154,7 +154,7 @@ export default function MyReservations({ slug, athlete, open, onClose, onPayPend
     } finally {
       setLoading(false);
     }
-  };
+  }, [slug, phone]);
 
   useEffect(() => {
     if (!open) return;
@@ -162,7 +162,7 @@ export default function MyReservations({ slug, athlete, open, onClose, onPayPend
       setPhone(athlete.phone);
     }
     fetchReservas(athlete?.phone);
-  }, [open, slug, athlete]);
+  }, [open, athlete, fetchReservas]);
 
   if (!open) return null;
 

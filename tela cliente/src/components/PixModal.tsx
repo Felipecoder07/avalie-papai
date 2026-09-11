@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { X, Copy, Check, Clock, ShieldCheck, Loader2, Zap } from 'lucide-react';
+import { X, Copy, Check, Clock, ShieldCheck, Loader2 } from 'lucide-react';
 import type { ReservationInput } from '../types';
 import { brl, formatLongDate, mmss } from '../lib/format';
 import { BACKEND_URL } from '../lib/backendUrl';

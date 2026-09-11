@@ -10,7 +10,9 @@
     "test:backend": "npm run test --prefix backend",
     "test:frontend": "npm run test --prefix frontend",
     "test:cliente": "npm run test --prefix \"tela cliente\"",
-    "test": "npm run test:backend && npm run test:cliente && npm run test:frontend"
+    "test": "npm run test:backend && npm run test:cliente && npm run test:frontend",
+    "validate": "node scripts/validate.cjs",
+    "validate:gateway": "npm run test --prefix backend -- tests/gateway.test.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

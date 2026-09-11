@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { User, Phone, Lock, Eye, EyeOff, Loader2, AlertCircle, CheckCircle, X, Shield, CreditCard, Trash2, KeyRound, Camera, Sparkles, BadgeCheck, LogOut } from 'lucide-react';
+import { User, Phone, Lock, Eye, EyeOff, Loader2, AlertCircle, CheckCircle, X, Shield, CreditCard, Trash2, KeyRound, Camera, BadgeCheck, LogOut } from 'lucide-react';
 import { maskPhone, maskCPF } from '../lib/format';
 
 
@@ -189,9 +189,10 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
       } else {
         setErrorData(data.error || 'Erro ao atualizar informações.');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[MyProfileModal Error]', err);
-      setErrorData(`Falha de conexão (${err?.message || 'erro de rede'}).`);
+      const errMsg = err instanceof Error ? err.message : 'erro de rede';
+      setErrorData(`Falha de conexão (${errMsg}).`);
     } finally {
       setLoadingData(false);
     }

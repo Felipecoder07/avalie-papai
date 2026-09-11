@@ -381,6 +381,29 @@ const initDb = () => {
     db.run("ALTER TABLE FaturasSaaS ADD COLUMN ciclo TEXT DEFAULT 'mensal'", (err) => { /* ignora se já existir */ });
     db.run("ALTER TABLE FaturasSaaS ADD COLUMN descricao TEXT", (err) => { /* ignora se já existir */ });
     
+    // Tabelas para fluxo OAuth Seguro
+    db.run(`
+      CREATE TABLE IF NOT EXISTS OAuthStates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        state TEXT UNIQUE NOT NULL,
+        tenant_id INTEGER NOT NULL,
+        usuario_id INTEGER,
+        expira_em DATETIME NOT NULL,
+        usado INTEGER DEFAULT 0,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (tenant_id) REFERENCES Arenas(id)
+      )
+    `);
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS OAuthCodesUsados (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT UNIQUE NOT NULL,
+        tenant_id INTEGER,
+        criado_em DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Migração de coerência financeira: atualiza faturas legadas antigas de teste para os valores reais dos planos
     db.run("UPDATE FaturasSaaS SET valor = 49.99 WHERE plano_id = 1 AND valor = 99.9", () => {});
     db.run("UPDATE FaturasSaaS SET valor = 79.99 WHERE plano_id = 2 AND valor = 99.9", () => {});

@@ -20,7 +20,6 @@ export default function CheckoutDrawer({
   slots, 
   court, 
   selectedSport,
-  onSportChange,
   initialName = '', 
   initialPhone = '', 
   onClose, 

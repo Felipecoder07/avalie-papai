@@ -1242,7 +1242,7 @@ export function AdminReservas() {
       if (q.hora_fechamento && q.hora_fechamento > latest) latest = q.hora_fechamento;
     });
     const minHour = earliest !== '23:59' ? Number.parseInt(earliest.split(':')[0], 10) : 8;
-    let maxHour = latest !== '00:00' ? Number.parseInt(latest.split(':')[0], 10) : 22;
+    const maxHour = latest !== '00:00' ? Number.parseInt(latest.split(':')[0], 10) : 22;
 
 
     // Time Slots de 1 em 1 hora

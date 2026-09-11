@@ -12,7 +12,10 @@ const getMinhaArena = async (req, res) => {
       return res.status(404).json({ error: 'Arena não encontrada.' });
     }
     
-    res.json(arena);
+    // A chave privada é usada somente no servidor, inclusive na tela de configurações.
+    const publicArena = { ...arena, gateway_connected: Boolean(arena.gateway_access_token?.trim()) };
+    delete publicArena.gateway_access_token;
+    res.json(publicArena);
   } catch (error) {
     console.error('Erro ao buscar arena:', error);
     res.status(500).json({ error: 'Erro ao buscar dados da arena.' });

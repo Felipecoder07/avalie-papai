@@ -2,6 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middlewares/auth');
 const db = require('../config/database');
+const { assertReservationAccess, requireGatewayManager } = require('../utils/gatewayAuthorization');
+const {
+  createOAuthState,
+  validateAndConsumeOAuthState,
+  validateAndConsumeOAuthCode
+} = require('../utils/oauthState');
 const { criarCobrancaPix, criarCobrancaCartao, criarCobrancaMaquineta, processarLiquidacao } = require('../services/gatewayService');
 
 // Criar cobrança para uma reserva (Pix, Cartão ou Maquineta)
@@ -11,9 +17,7 @@ async function validarReservaECalcularValorCobrar(reserva_id, user, valorParam) 
     throw { status: 404, message: 'Reserva não encontrada.' };
   }
 
-  if (user.perfil === 'Cliente' && reserva.cliente_id !== user.cliente_id) {
-    throw { status: 403, message: 'Acesso negado. Esta reserva não pertence à sua conta.' };
-  }
+  assertReservationAccess(user, reserva);
 
   if (reserva.status === 'Cancelada') {
     throw { status: 400, message: 'Não é possível pagar por uma reserva que já está cancelada.' };
@@ -91,15 +95,13 @@ router.post('/cobranca', verifyToken, async (req, res) => {
 router.get('/status/:reserva_id', verifyToken, async (req, res) => {
   try {
     const { reserva_id } = req.params;
-    const reserva = await db.getAsync('SELECT status, status_pagamento, cliente_id FROM Reservas WHERE id = ?', [reserva_id]);
+    const reserva = await db.getAsync('SELECT status, status_pagamento, cliente_id, tenant_id FROM Reservas WHERE id = ?', [reserva_id]);
 
     if (!reserva) {
       return res.status(404).json({ error: 'Reserva não encontrada.' });
     }
 
-    if (req.user.perfil === 'Cliente' && reserva.cliente_id !== req.user.cliente_id) {
-      return res.status(403).json({ error: 'Acesso negado. Esta reserva não pertence à sua conta.' });
-    }
+    assertReservationAccess(req.user, reserva);
 
     res.json({
       status: reserva.status,
@@ -108,13 +110,13 @@ router.get('/status/:reserva_id', verifyToken, async (req, res) => {
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Erro ao consultar status da transação.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Erro ao consultar status da transação.' });
   }
 });
 
 // Simular pagamento (Útil apenas para desenvolvimento/testes e demonstração)
 router.post('/simular-pagamento', verifyToken, async (req, res) => {
-  if (process.env.NODE_ENV === 'production' && req.user.perfil !== 'SuperAdmin') {
+  if (process.env.NODE_ENV === 'production') {
     return res.status(403).json({ error: 'A simulação de pagamentos está desabilitada em ambiente de produção.' });
   }
 
@@ -123,6 +125,13 @@ router.post('/simular-pagamento', verifyToken, async (req, res) => {
     if (!gateway_ref) {
       return res.status(400).json({ error: 'O campo gateway_ref é obrigatório.' });
     }
+
+    const reserva = await db.getAsync(`
+      SELECT r.tenant_id, r.cliente_id FROM Reservas r
+      JOIN TransacoesGateway t ON t.reserva_id = r.id WHERE t.gateway_ref = ?
+    `, [gateway_ref]);
+    if (!reserva) return res.status(404).json({ error: 'Transação não encontrada.' });
+    assertReservationAccess(req.user, reserva);
 
     const payload = {};
     if (device_id !== undefined) payload.device_id = device_id;
@@ -133,17 +142,17 @@ router.post('/simular-pagamento', verifyToken, async (req, res) => {
 
   } catch (error) {
     console.error(error);
-    res.status(400).json({ error: error.message || 'Erro ao simular liquidação.' });
+    res.status(error.status || 400).json({ error: error.message || 'Erro ao simular liquidação.' });
   }
 });
 
 // Consultar as Configurações de Gateway da Arena (Maquineta e Credenciais)
-router.get('/maquineta', verifyToken, async (req, res) => {
+router.get('/maquineta', verifyToken, requireGatewayManager, async (req, res) => {
   try {
     const arena = await db.getAsync('SELECT gateway_device_id, gateway_access_token, gateway_public_key FROM Arenas WHERE id = ?', [req.user.tenant_id]);
     res.json({ 
       gateway_device_id: arena ? arena.gateway_device_id : null,
-      gateway_access_token: arena ? arena.gateway_access_token : null,
+      gateway_connected: Boolean(arena?.gateway_access_token?.trim()),
       gateway_public_key: arena ? arena.gateway_public_key : null
     });
   } catch (error) {
@@ -153,11 +162,12 @@ router.get('/maquineta', verifyToken, async (req, res) => {
 });
 
 // Configurar/Atualizar o Serial Number e Credenciais de Pagamento da Arena
-router.post('/maquineta', verifyToken, async (req, res) => {
+router.post('/maquineta', verifyToken, requireGatewayManager, async (req, res) => {
   try {
     const { gateway_device_id, gateway_access_token, gateway_public_key } = req.body;
-    if (req.user.perfil !== 'Administrador' && req.user.perfil !== 'Gerente') {
-      return res.status(403).json({ error: 'Acesso negado. Apenas administradores ou gerentes podem configurar pagamentos.' });
+    const values = [gateway_device_id, gateway_access_token, gateway_public_key];
+    if (values.some(value => value != null && typeof value !== 'string')) {
+      return res.status(400).json({ error: 'As configurações de pagamento devem ser textos.' });
     }
 
     // Validação básica do serial number
@@ -166,8 +176,14 @@ router.post('/maquineta', verifyToken, async (req, res) => {
     }
 
     await db.runAsync(
-      'UPDATE Arenas SET gateway_device_id = ?, gateway_access_token = ?, gateway_public_key = ? WHERE id = ?', 
-      [gateway_device_id || null, gateway_access_token || null, gateway_public_key || null, req.user.tenant_id]
+      `UPDATE Arenas SET
+        gateway_device_id = CASE WHEN ? THEN ? ELSE gateway_device_id END,
+        gateway_access_token = COALESCE(?, gateway_access_token),
+        gateway_public_key = CASE WHEN ? THEN ? ELSE gateway_public_key END
+       WHERE id = ?`,
+      [gateway_device_id !== undefined, gateway_device_id?.trim() || null,
+        gateway_access_token?.trim() || null,
+        gateway_public_key !== undefined, gateway_public_key?.trim() || null, req.user.tenant_id]
     );
 
     res.json({ message: 'Configuração da maquineta física atualizada com sucesso.' });
@@ -176,7 +192,6 @@ router.post('/maquineta', verifyToken, async (req, res) => {
     res.status(500).json({ error: 'Erro ao configurar dispositivo.' });
   }
 });
-
 async function resolverTokenWebhookMercadoPago(paymentId) {
   const transacao = await db.getAsync('SELECT reserva_id FROM TransacoesGateway WHERE gateway_ref = ?', [paymentId]);
   let token = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MERCADOPAGO_ACCESS_TOKEN;
@@ -255,7 +270,7 @@ async function getSaaSGatewayCredentials() {
 }
 
 // OAuth: Gerar URL de Autorização para a Arena conectar a conta Mercado Pago
-router.get('/oauth/url', verifyToken, async (req, res) => {
+router.get('/oauth/url', verifyToken, requireGatewayManager, async (req, res) => {
   try {
     const tenantId = req.user.tenant_id;
     const { clientId } = await getSaaSGatewayCredentials();
@@ -270,9 +285,10 @@ router.get('/oauth/url', verifyToken, async (req, res) => {
       });
     }
 
-    const authUrl = `https://auth.mercadopago.com.br/authorization?client_id=${clientId.trim()}&response_type=code&platform_id=mp&redirect_uri=${encodeURIComponent(redirectUri)}&state=${tenantId}`;
+    const state = await createOAuthState(tenantId, req.user.id);
+    const authUrl = `https://auth.mercadopago.com.br/authorization?client_id=${clientId.trim()}&response_type=code&platform_id=mp&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
 
-    res.json({ url: authUrl });
+    res.json({ url: authUrl, state });
   } catch (error) {
     console.error('[OAuth URL Error]', error);
     res.status(500).json({ error: 'Erro ao gerar URL de autorização OAuth.' });
@@ -281,14 +297,27 @@ router.get('/oauth/url', verifyToken, async (req, res) => {
 
 // OAuth: Callback que recebe o código e troca pelo Access Token da Arena
 router.get('/oauth/callback', async (req, res) => {
+  const frontendUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5173';
   try {
     const { code, state, error } = req.query;
 
-    if (error || !code) {
-      return res.status(400).send('<h2>Autorização cancelada ou recusada pelo Mercado Pago.</h2><script>setTimeout(() => window.close(), 3000);</script>');
+    if (error || !code || !state) {
+      const msg = error ? 'Autorização cancelada ou recusada pelo Mercado Pago.' : 'Parâmetros code ou state ausentes.';
+      return res.redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=error&message=${encodeURIComponent(msg)}`);
     }
 
-    const tenantId = state;
+    const stateValidation = await validateAndConsumeOAuthState(state);
+    if (!stateValidation.valid) {
+      const safeErr = stateValidation.error || 'Falha de validação do estado OAuth.';
+      return res.status(stateValidation.status || 400).redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=error&message=${encodeURIComponent(safeErr)}`);
+    }
+
+    const tenantId = stateValidation.tenant_id;
+    const codeValidation = await validateAndConsumeOAuthCode(code, tenantId);
+    if (!codeValidation.valid) {
+      return res.status(400).redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=error&message=${encodeURIComponent(codeValidation.error)}`);
+    }
+
     const { clientId, clientSecret } = await getSaaSGatewayCredentials();
     const host = req.headers.host || 'localhost:3000';
     const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
@@ -319,23 +348,25 @@ router.get('/oauth/callback', async (req, res) => {
             SET gateway_access_token = ?, gateway_public_key = ?
             WHERE id = ?
           `, [accessToken, publicKey, tenantId]);
+          return res.redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=success`);
         }
       } else {
         const errData = await mpRes.json();
         const safeErrMsg = String(errData?.message || 'Erro na resposta do Mercado Pago').replace(/[\r\n]/g, '');
-        console.error(`[OAuth Token Exchange Error] ${safeErrMsg}`);
+        console.error('[OAuth Token Exchange Error] Falha na troca do código de autorização');
+        return res.redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=error&message=${encodeURIComponent(safeErrMsg)}`);
       }
     }
 
-    return res.redirect('http://localhost:5173/admin/configuracoes?tab=pagamentos&oauth=success');
+    return res.redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=error&message=${encodeURIComponent('Credenciais SaaS não configuradas.')}`);
   } catch (error) {
-    console.error('[OAuth Callback Error]', error);
-    res.status(500).send('<h2>Erro interno no processo de autenticação.</h2>');
+    console.error('[OAuth Callback Error]');
+    return res.status(500).redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=error&message=${encodeURIComponent('Erro interno no processo de autenticação.')}`);
   }
 });
 
 // OAuth: Trocar o código de autorização pelo Access Token da Arena
-router.post('/oauth/exchange', async (req, res) => {
+router.post('/oauth/exchange', verifyToken, requireGatewayManager, async (req, res) => {
   try {
     const { code, state } = req.body;
 
@@ -343,7 +374,17 @@ router.post('/oauth/exchange', async (req, res) => {
       return res.status(400).json({ error: 'Parâmetros code e state são obrigatórios.' });
     }
 
-    const tenantId = state;
+    const tenantId = req.user.tenant_id;
+    const stateValidation = await validateAndConsumeOAuthState(state, tenantId);
+    if (!stateValidation.valid) {
+      return res.status(stateValidation.status || 400).json({ error: stateValidation.error });
+    }
+
+    const codeValidation = await validateAndConsumeOAuthCode(code, tenantId);
+    if (!codeValidation.valid) {
+      return res.status(codeValidation.status || 400).json({ error: codeValidation.error });
+    }
+
     const { clientId, clientSecret } = await getSaaSGatewayCredentials();
     const host = req.headers.host || 'localhost:3000';
     const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
@@ -378,22 +419,22 @@ router.post('/oauth/exchange', async (req, res) => {
           WHERE id = ?
         `, [accessToken, publicKey, tenantId]);
 
-        return res.json({ message: 'Conta Mercado Pago conectada com sucesso!', accessToken, publicKey });
+        return res.json({ message: 'Conta Mercado Pago conectada com sucesso!', gateway_connected: true, publicKey });
       }
     } else {
       const errData = await mpRes.json();
       const safeErrMsg = String(errData?.message || 'Erro ao trocar código de autorização.').replace(/[\r\n]/g, '');
-      console.error(`[OAuth Exchange Error] ${safeErrMsg}`);
+      console.error('[OAuth Exchange Error] Falha na troca do código de autorização');
       return res.status(400).json({ error: safeErrMsg });
     }
   } catch (error) {
-    console.error('[OAuth Exchange Error]', error);
+    console.error('[OAuth Exchange Error]');
     res.status(500).json({ error: 'Erro interno ao processar OAuth.' });
   }
 });
 
 // OAuth: Desconectar a conta Mercado Pago da Arena
-router.post('/oauth/desconectar', verifyToken, async (req, res) => {
+router.post('/oauth/desconectar', verifyToken, requireGatewayManager, async (req, res) => {
   try {
     const tenantId = req.user.tenant_id;
     await db.runAsync(`
