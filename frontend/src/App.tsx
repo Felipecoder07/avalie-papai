@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { MasterLayout } from './layouts/MasterLayout';
 import { MasterDashboard } from './screens/MasterDashboard';
 import { MasterArenas } from './screens/MasterArenas';
@@ -28,6 +28,7 @@ import { AdminAssinatura } from './screens/admin/AdminAssinatura';
 import { AdminConfiguracoes } from './screens/admin/AdminConfiguracoes';
 import { AdminAuditoria } from './screens/admin/AdminAuditoria';
 import { safeStorage } from './utils/safeStorage';
+import { SessionGuard, RoleRoute } from './components/SessionGuard';
 
 interface AdminSessionResult {
   blockedMsg?: string;
@@ -101,7 +102,7 @@ function processAdminSessionResult(
 }
 
 // Componente Wrapper para proteger as rotas do Admin da Arena
-function AdminGuard({ children }: { children: React.ReactNode }) {
+function AdminGuard({ children }: Readonly<{ children: React.ReactNode }>) {
   const [isAuth, setIsAuth] = useState(false);
   const [checking, setChecking] = useState(true);
   const [blockedMsg, setBlockedMsg] = useState<string | null>(null);
@@ -208,145 +209,6 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Componente Wrapper para proteger as rotas do Master
-function MasterGuard({ children }: { children: React.ReactNode }) {
-  const [isAuth, setIsAuth] = useState(false);
-  const [checking, setChecking] = useState(true);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    let active = true;
-
-    // Verifica parâmetros de redirecionamento (caso de ativação remota de login)
-    const params = new URLSearchParams(window.location.search);
-    const urlToken = params.get('token');
-    const urlUser = params.get('user');
-
-    if (urlToken && urlUser) {
-      const sanitizedToken = urlToken.replace(/[^a-zA-Z0-9._-]/g, '').trim();
-      safeStorage.setItem('courtmanager_token', sanitizedToken);
-      try {
-        const decodedUser = decodeURIComponent(atob(urlUser)).replace(/[<>\0]/g, '');
-        safeStorage.setItem('courtmanager_user', decodedUser);
-      } catch (e) { }
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-
-    const verifySession = async () => {
-      const token = safeStorage.getItem('courtmanager_token');
-      if (!token) {
-        if (active) navigate('/master-login', { replace: true });
-        return;
-      }
-
-      try {
-        const res = await fetch('/api/auth/me', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (!res.ok) throw new Error('Sessão expirada ou não autorizada');
-
-        const data = await res.json();
-        const user = data.usuario;
-
-        if (user.perfil === 'SuperAdmin') {
-          if (active) {
-            safeStorage.setItem('courtmanager_user', JSON.stringify(user));
-            setIsAuth(true);
-            setChecking(false);
-          }
-        } else {
-          throw new Error('Acesso restrito ao Super Administrador');
-        }
-      } catch (err) {
-        const safeErr = String(err instanceof Error ? err.message : err).replace(/[\r\n]/g, '');
-        console.error('Erro na validação do Master:', safeErr);
-        if (active) {
-          safeStorage.removeItem('courtmanager_token');
-          safeStorage.removeItem('courtmanager_user');
-          navigate('/master-login', { replace: true });
-        }
-      }
-    };
-
-    verifySession();
-    return () => { active = false; };
-  }, [navigate]);
-
-  if (checking) return <div className="flex min-h-screen items-center justify-center bg-cream text-charcoal">Verificando...</div>;
-  if (!isAuth) return null;
-  return <>{children}</>;
-}
-
-// Componente Wrapper para proteger as rotas de Cliente/Jogador
-function ClientGuard({ children }: { children: React.ReactNode }) {
-  const [isAuth, setIsAuth] = useState(false);
-  const [checking, setChecking] = useState(true);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    let active = true;
-    const verifySession = async () => {
-      const token = safeStorage.getItem('courtmanager_token');
-      if (!token) {
-        if (active) navigate('/login', { replace: true });
-        return;
-      }
-
-      try {
-        const res = await fetch('/api/auth/me', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-
-        if (!res.ok) throw new Error('Sessão expirada ou não autorizada');
-
-        const data = await res.json();
-        const user = data.usuario;
-
-        if (user.perfil === 'Cliente') {
-          if (active) {
-            safeStorage.setItem('courtmanager_user', JSON.stringify(user));
-            setIsAuth(true);
-            setChecking(false);
-          }
-        } else {
-          throw new Error('Acesso restrito ao Cliente');
-        }
-      } catch (err) {
-        const safeErr = String(err instanceof Error ? err.message : err).replace(/[\r\n]/g, '');
-        console.error('Erro na validação do Cliente:', safeErr);
-        if (active) {
-          safeStorage.removeItem('courtmanager_token');
-          safeStorage.removeItem('courtmanager_user');
-          navigate('/login', { replace: true });
-        }
-      }
-    };
-
-    verifySession();
-    return () => { active = false; };
-  }, [navigate]);
-
-  if (checking) return <div className="flex min-h-screen items-center justify-center bg-cream text-charcoal">Verificando...</div>;
-  if (!isAuth) return null;
-  return <>{children}</>;
-}
-
-// Wrapper para verificar permissões de perfil em rotas específicas
-function RoleRoute({ allowedRoles, children }: { allowedRoles: string[]; children: React.ReactNode }) {
-  const userStr = localStorage.getItem('courtmanager_user');
-  let hasAccess = false;
-  if (userStr) {
-    try {
-      const user = JSON.parse(userStr);
-      if (allowedRoles.includes(user.perfil)) {
-        hasAccess = true;
-      }
-    } catch (e) { }
-  }
-  return hasAccess ? <>{children}</> : <Navigate to="/admin/dashboard" replace />;
-}
-
 function App() {
   const navigate = useNavigate();
 
@@ -363,8 +225,8 @@ function App() {
       <Route path="/v/:slug" element={<PublicTenantView />} />
 
       {/* Portal do Cliente / Jogador (Fase 2 - Gateway Pix/Card) */}
-      <Route path="/portal" element={<ClientGuard><PortalCliente /></ClientGuard>} />
-      <Route path="/portal/novo-agendamento" element={<ClientGuard><PortalNovaReserva /></ClientGuard>} />
+      <Route path="/portal" element={<SessionGuard requiredProfile="Cliente" loginPath="/login" roleLabel="Cliente"><PortalCliente /></SessionGuard>} />
+      <Route path="/portal/novo-agendamento" element={<SessionGuard requiredProfile="Cliente" loginPath="/login" roleLabel="Cliente"><PortalNovaReserva /></SessionGuard>} />
 
       {/* Rotas Inquilino (Fase 3/4) */}
       <Route path="/admin" element={<AdminGuard><AdminLayout /></AdminGuard>}>
@@ -382,7 +244,7 @@ function App() {
       </Route>
 
       {/* Rotas Master Admin */}
-      <Route path="/master" element={<MasterGuard><MasterLayout /></MasterGuard>}>
+      <Route path="/master" element={<SessionGuard requiredProfile="SuperAdmin" loginPath="/master-login" roleLabel="Super Administrador" acceptRemoteLogin><MasterLayout /></SessionGuard>}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<MasterDashboard onNavigate={(screen) => navigate(`/master/${screen}`)} />} />
         <Route path="arenas" element={<MasterArenas onNavigate={(screen) => navigate(`/master/${screen}`)} />} />

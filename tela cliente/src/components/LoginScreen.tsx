@@ -20,7 +20,7 @@ declare global {
   }
 }
 
-export default function LoginScreen({ arena, slug, onAuthed, onClose }: Props) {
+export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly<Props>) {
   useEffect(() => {
     document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';

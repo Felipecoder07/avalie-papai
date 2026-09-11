@@ -1,3 +1,4 @@
+const { getReservationPrice } = require('../utils/bookingPrice');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
 const { criarCobrancaPix } = require('../services/gatewayService');
@@ -142,7 +143,7 @@ const getQuadrasBySlug = async (req, res) => {
 const getDisponibilidadeBySlug = async (req, res) => {
   const { slug } = req.params;
   const dataFiltro = req.query.data || new Date().toISOString().split('T')[0];
-  const quadraIdFiltro = req.query.quadra_id ? parseInt(req.query.quadra_id, 10) : null;
+  const quadraIdFiltro = req.query.quadra_id ? Number.parseInt(req.query.quadra_id, 10) : null;
   const esporteFiltro = req.query.esporte || null;
 
   try {
@@ -221,8 +222,8 @@ const getDisponibilidadeBySlug = async (req, res) => {
       const hAbertura = q.hora_abertura || arena.horario_abertura || '06:00';
       const hFechamento = q.hora_fechamento || arena.horario_fechamento || '23:00';
 
-      const startHour = parseInt(hAbertura.split(':')[0], 10);
-      const endHour = parseInt(hFechamento.split(':')[0], 10);
+      const startHour = Number.parseInt(hAbertura.split(':')[0], 10);
+      const endHour = Number.parseInt(hFechamento.split(':')[0], 10);
 
       const slotsHorarios = [];
       for (let h = startHour; h < endHour; h++) {
@@ -308,7 +309,7 @@ function gerarPixEMV({ chave, nome, cidade = 'SAO PAULO', valor, txid = '***' })
     .substring(0, 15)
     .toUpperCase();
 
-  const valStr = parseFloat(valor).toFixed(2);
+  const valStr = Number.parseFloat(valor).toFixed(2);
   const cleanTxid = (txid || '***').replace(/[^a-zA-Z0-9]/g, '').substring(0, 25) || '***';
 
   const formatField = (id, value) => {
@@ -388,6 +389,26 @@ async function checkBookingConflicts(listaItens) {
   return null;
 }
 
+async function recoverTenantClient(tenantData, insertErr) {
+  const { cleanEmail, cleanCpf, cleanPhone, nome } = tenantData;
+  let cliente = null;
+  if (cleanEmail) {
+    cliente = await db.getAsync('SELECT id FROM Clientes WHERE LOWER(email) = ?', [cleanEmail]);
+  }
+  if (!cliente && cleanCpf) {
+    cliente = await db.getAsync('SELECT id FROM Clientes WHERE cpf = ?', [cleanCpf]);
+  }
+  if (cliente) {
+    await db.runAsync(
+      `UPDATE Clientes SET nome = ?, telefone = COALESCE(?, telefone) WHERE id = ?`,
+      [nome.trim(), cleanPhone, cliente.id]
+    );
+    return cliente;
+  }
+  throw insertErr;
+  
+}
+
 async function findOrCreateTenantClient(tenantId, { nome, email, telefone, cpf }) {
   const cleanEmail = email && email.trim() ? email.trim().toLowerCase() : null;
   const cleanPhone = telefone && telefone.trim() ? telefone.trim() : null;
@@ -421,20 +442,7 @@ async function findOrCreateTenantClient(tenantId, { nome, email, telefone, cpf }
     );
     return { id: rCliente.lastID };
   } catch (insertErr) {
-    if (cleanEmail) {
-      cliente = await db.getAsync('SELECT id FROM Clientes WHERE LOWER(email) = ?', [cleanEmail]);
-    }
-    if (!cliente && cleanCpf) {
-      cliente = await db.getAsync('SELECT id FROM Clientes WHERE cpf = ?', [cleanCpf]);
-    }
-    if (cliente) {
-      await db.runAsync(
-        `UPDATE Clientes SET nome = ?, telefone = COALESCE(?, telefone) WHERE id = ?`,
-        [nome.trim(), cleanPhone, cliente.id]
-      );
-      return cliente;
-    }
-    throw insertErr;
+    return recoverTenantClient({ cleanEmail, cleanCpf, cleanPhone, nome }, insertErr);
   }
 }
 
@@ -445,22 +453,8 @@ async function insertMultiSlotReservations(tenantId, clienteId, listaItens) {
 
   for (const item of listaItens) {
     const quadra = await db.getAsync('SELECT preco_base, modalidades, tipo FROM Quadras WHERE id = ? AND tenant_id = ?', [item.quadra_id, tenantId]);
-    let precoItem = (quadra && typeof quadra.preco_base === 'number' && quadra.preco_base > 0) ? quadra.preco_base : 80.0;
-    
     const esporteItem = item.esporte || 'Geral';
-    if (quadra && quadra.modalidades) {
-      try {
-        const parsed = typeof quadra.modalidades === 'string' ? JSON.parse(quadra.modalidades) : quadra.modalidades;
-        if (Array.isArray(parsed)) {
-          const match = parsed.find(m => (typeof m === 'object' ? m.nome : m) === esporteItem);
-          if (match && typeof match === 'object' && match.preco != null && Number(match.preco) > 0) {
-            precoItem = Number(match.preco);
-          }
-        }
-      } catch {
-        // Ignorar parsing
-      }
-    }
+    const precoItem = getReservationPrice(quadra, esporteItem);
 
     valorTotalGeral += precoItem;
 
@@ -480,12 +474,8 @@ const agendarReservaPublica = async (req, res) => {
   const { slug } = req.params;
   const { nome, telefone, cpf, email, quadra_id, data_reserva, hora_inicio, hora_fim, itens } = req.body;
 
-  let listaItens = [];
-  if (Array.isArray(itens) && itens.length > 0) {
-    listaItens = itens;
-  } else if (quadra_id && data_reserva && hora_inicio && hora_fim) {
-    listaItens = [{ quadra_id, data_reserva, hora_inicio, hora_fim }];
-  } else {
+  const listaItens = getBookingItems({ itens, quadra_id, data_reserva, hora_inicio, hora_fim });
+  if (!listaItens) {
     return res.status(400).json({ error: 'Preencha todos os campos obrigatórios e selecione ao menos um horário.' });
   }
 
@@ -535,27 +525,7 @@ const agendarReservaPublica = async (req, res) => {
       [cliente.id, itemPrimeiro.quadra_id, itemPrimeiro.data_reserva, itemPrimeiro.hora_inicio]
     );
 
-    if (reservaRecente) {
-      const chavePixArena = arena.chave_pix?.trim() || '';
-      const titularArena = arena.titular_pix || arena.nome || 'Arena';
-      const cidadeArena = arena.cidade_pix || 'SAO PAULO';
-      const copiaCola = gerarPixEMV({
-        chave: chavePixArena,
-        nome: titularArena,
-        cidade: cidadeArena,
-        valor: reservaRecente.valor_total,
-        txid: `RESERVA${reservaRecente.id}`
-      });
-
-      return res.json({
-        reserva_id: reservaRecente.id,
-        reservas_ids: [reservaRecente.id],
-        valor_total: reservaRecente.valor_total,
-        copia_cola: copiaCola,
-        qr_code: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(copiaCola)}`,
-        gateway_ref: `PIX_MULTI_${reservaRecente.id}`
-      });
-    }
+    if (reservaRecente) return respondRecentReservation(res, arena, reservaRecente);
 
     const inserted = await insertMultiSlotReservations(arena.id, cliente.id, listaItens);
     const valorTotalGeral = inserted.valorTotalGeral;
@@ -887,35 +857,12 @@ const googleAuthAtletaPublico = async (req, res) => {
     const tenantId = arena.id;
     const jwt = require('jsonwebtoken');
     const bcrypt = require('bcrypt');
-    const crypto = require('crypto');
+    const crypto = require("node:crypto");
     const JWT_SECRET = process.env.JWT_SECRET || 'secret-jwt-courtmanager-2026';
 
-    let email = null;
-    let nome = null;
-
-    if (credential) {
-      try {
-        const decoded = jwt.decode(credential);
-        if (decoded && decoded.email) {
-          email = decoded.email;
-          nome = decoded.name || decoded.given_name || email.split('@')[0];
-        }
-      } catch {
-        return res.status(400).json({ error: 'Token do Google inválido.' });
-      }
-    } else if (process.env.NODE_ENV !== 'production' && bodyEmail) {
-      email = bodyEmail;
-      nome = bodyNome || email.split('@')[0];
-    } else {
-      return res.status(400).json({ error: 'Credencial do Google não informada.' });
-    }
-
-    if (!email) {
-      return res.status(400).json({ error: 'E-mail do Google não identificado.' });
-    }
-
-    email = email.trim().toLowerCase();
-    nome = (nome || email.split('@')[0]).trim();
+    const identity = await readGoogleIdentity({ credential, bodyEmail, bodyNome, jwt, res });
+    if (!identity) return;
+    const { email, nome } = identity;
 
     let usuario = await obterOuCriarUsuarioGoogle({ email, nome, tenantId, bcrypt, crypto });
 
@@ -1036,17 +983,20 @@ async function atualizarTabelaUsuarios(usuarioId, nome, novaSenha, bcrypt) {
 async function sincronizarClienteTenant({ arenaId, usuario, nome, telefone, cpf, avatarUrl }) {
   const avatarToSave = (avatarUrl && typeof avatarUrl === 'string' && avatarUrl.trim().length > 0) ? avatarUrl.trim() : null;
 
-  let cliente = await db.getAsync('SELECT id, avatar_url FROM Clientes WHERE LOWER(email) = LOWER(?) AND tenant_id = ?', [usuario.email, arenaId]);
+  const clientName = nome ? nome.trim() : usuario.nome;
+  const clientPhone = telefone ? telefone.trim() : null;
+  const clientCpf = cpf ? cpf.trim() : null;
+  const cliente = await db.getAsync('SELECT id, avatar_url FROM Clientes WHERE LOWER(email) = LOWER(?) AND tenant_id = ?', [usuario.email, arenaId]);
   if (cliente) {
     const finalAvatar = avatarToSave || cliente.avatar_url || null;
     await db.runAsync(
       'UPDATE Clientes SET nome = ?, telefone = ?, cpf = ?, avatar_url = ? WHERE id = ?',
-      [nome ? nome.trim() : usuario.nome, telefone ? telefone.trim() : null, cpf ? cpf.trim() : null, finalAvatar, cliente.id]
+      [clientName, clientPhone, clientCpf, finalAvatar, cliente.id]
     );
   } else {
     await db.runAsync(
       'INSERT INTO Clientes (tenant_id, nome, email, telefone, cpf, avatar_url) VALUES (?, ?, ?, ?, ?, ?)',
-      [arenaId, nome ? nome.trim() : usuario.nome, usuario.email, telefone ? telefone.trim() : null, cpf ? cpf.trim() : null, avatarToSave]
+      [arenaId, clientName, usuario.email, clientPhone, clientCpf, avatarToSave]
     );
   }
 }
@@ -1386,7 +1336,7 @@ const solicitarRecuperacaoSenhaAtleta = async (req, res) => {
       return res.json({ message: successMsg });
     }
 
-    const crypto = require('crypto');
+    const crypto = require("node:crypto");
     const codigo6Digits = crypto.randomInt(100000, 1000000).toString();
     const token = crypto.randomBytes(24).toString('hex');
     const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
@@ -1673,7 +1623,7 @@ async function processarEstornoCancelamento({ reserva, arena, grupoClause, grupo
 
 const cancelarReservaAtleta = async (req, res) => {
   const { slug, id } = req.params;
-  const reservaId = parseInt(id, 10);
+  const reservaId = Number.parseInt(id, 10);
 
   if (!reservaId || isNaN(reservaId)) {
     return res.status(400).json({ error: 'ID de reserva inválido.' });
@@ -1755,7 +1705,7 @@ const cancelarReservaAtleta = async (req, res) => {
       return res.status(400).json({ error: 'Não é possível cancelar uma reserva de data ou horário que já passou.' });
     }
 
-    const crypto = require('crypto');
+    const crypto = require("node:crypto");
     const codigoValidacao = 'VAL-' + crypto.randomBytes(3).toString('hex').toUpperCase();
 
     const { estornoStatus, mensagemDevolucao } = await processarEstornoCancelamento({
@@ -1906,3 +1856,66 @@ module.exports = {
 
 
 
+
+function getBookingItems({ itens, quadra_id, data_reserva, hora_inicio, hora_fim }) {
+  if (Array.isArray(itens) && itens.length > 0) return itens;
+  if (quadra_id && data_reserva && hora_inicio && hora_fim) return [{ quadra_id, data_reserva, hora_inicio, hora_fim }];
+  return null;
+}
+
+function respondRecentReservation(res, arena, reservaRecente) {
+      const chavePixArena = arena.chave_pix?.trim() || '';
+      const titularArena = arena.titular_pix || arena.nome || 'Arena';
+      const cidadeArena = arena.cidade_pix || 'SAO PAULO';
+      const copiaCola = gerarPixEMV({
+        chave: chavePixArena,
+        nome: titularArena,
+        cidade: cidadeArena,
+        valor: reservaRecente.valor_total,
+        txid: `RESERVA${reservaRecente.id}`
+      });
+
+      return res.json({
+        reserva_id: reservaRecente.id,
+        reservas_ids: [reservaRecente.id],
+        valor_total: reservaRecente.valor_total,
+        copia_cola: copiaCola,
+        qr_code: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(copiaCola)}`,
+        gateway_ref: `PIX_MULTI_${reservaRecente.id}`
+      });
+    }
+
+async function readGoogleIdentity({ credential, bodyEmail, bodyNome, jwt, res }) {
+  let email = null;
+  let nome = null;
+
+  if (credential) {
+    try {
+      const decoded = jwt.decode(credential);
+      if (decoded && decoded.email) {
+        email = decoded.email;
+        nome = decoded.name || decoded.given_name || email.split('@')[0];
+      }
+    } catch {
+      res.status(400).json({ error: 'Token do Google inválido.' });
+    return null;
+    }
+  } else if (process.env.NODE_ENV !== 'production' && bodyEmail) {
+    email = bodyEmail;
+    nome = bodyNome || email.split('@')[0];
+  } else {
+    res.status(400).json({ error: 'Credencial do Google não informada.' });
+    return null;
+  }
+
+  if (!email) {
+    res.status(400).json({ error: 'E-mail do Google não identificado.' });
+    return null;
+  }
+
+  email = email.trim().toLowerCase();
+  nome = (nome || email.split('@')[0]).trim();
+
+
+  return { email, nome };
+}

@@ -7,7 +7,7 @@ import { GROWTH, formatBRL, formatDate } from '../data/mock';
 
 interface Props { onNavigate: (id: string) => void; }
 
-export function MasterDashboard({ onNavigate }: Props) {
+export function MasterDashboard({ onNavigate }: Readonly<Props>) {
   const [metrics, setMetrics] = useState({
     active: 0,
     blocked: 0,
@@ -69,7 +69,7 @@ export function MasterDashboard({ onNavigate }: Props) {
     if (parts.length !== 2) return monthStr;
     const year = parts[0].substring(2);
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-    const monthIndex = parseInt(parts[1], 10) - 1;
+    const monthIndex = Number.parseInt(parts[1], 10) - 1;
     return `${months[monthIndex]}/${year}`;
   };
 

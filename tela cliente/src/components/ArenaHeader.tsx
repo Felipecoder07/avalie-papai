@@ -10,7 +10,7 @@ interface Props {
   onLogin?: () => void;
 }
 
-export default function ArenaHeader({ arena, athlete, onMyReservations, onMyProfile, onLogin }: Props) {
+export default function ArenaHeader({ arena, athlete, onMyReservations, onMyProfile, onLogin }: Readonly<Props>) {
   return (
     <header className="relative">
       <div className="relative h-56 w-full overflow-hidden">

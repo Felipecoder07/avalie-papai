@@ -1,6 +1,6 @@
 const db = require('../config/database');
 const bcrypt = require('bcrypt');
-const crypto = require('crypto');
+const crypto = require("node:crypto");
 const logAuditEvent = require('../utils/auditLogger');
 const saasBillingService = require('../services/saasBillingService');
 
@@ -123,7 +123,7 @@ const getMetrics = async (req, res) => {
     const mrrAnteriorVal = mrrAtualVal - mrrNovoVal;
     let mrrVariacao = 0;
     if (mrrAnteriorVal > 0) {
-      mrrVariacao = parseFloat(((mrrNovoVal / mrrAnteriorVal) * 100).toFixed(1));
+      mrrVariacao = Number.parseFloat(((mrrNovoVal / mrrAnteriorVal) * 100).toFixed(1));
     } else if (mrrNovoVal > 0) {
       mrrVariacao = 100;
     }
@@ -146,7 +146,7 @@ const getMetrics = async (req, res) => {
       totalQuadras: totalQuadras.total,
       totalReceitaSaaS: mrr.valor || 0,
       arenasTrial: arenasTrial.total,
-      churnRate: parseFloat(churn.toFixed(1)),
+      churnRate: Number.parseFloat(churn.toFixed(1)),
       reservasHoje: reservasHoje.total,
       reservasSemana: reservasSemana.total,
       reservasMes: reservasMes.total,
@@ -170,16 +170,16 @@ const createArena = async (req, res) => {
   }
 
   try {
-    const planoIdFinal = parseInt(plano_id, 10) || 1;
-    const diasTrialFinal = trial_dias !== undefined ? parseInt(trial_dias, 10) : 14;
+    const planoIdFinal = Number.parseInt(plano_id, 10) || 1;
+    const diasTrialFinal = trial_dias !== undefined ? Number.parseInt(trial_dias, 10) : 14;
     const trialExpiraEm = diasTrialFinal > 0
       ? new Date(Date.now() + diasTrialFinal * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       : null;
 
-    let diaVencimentoFinal = parseInt(dia_vencimento, 10);
+    let diaVencimentoFinal = Number.parseInt(dia_vencimento, 10);
     if (!diaVencimentoFinal || isNaN(diaVencimentoFinal)) {
       if (trialExpiraEm) {
-        diaVencimentoFinal = parseInt(trialExpiraEm.split('-')[2], 10);
+        diaVencimentoFinal = Number.parseInt(trialExpiraEm.split('-')[2], 10);
       } else {
         diaVencimentoFinal = new Date().getUTCDate();
       }
@@ -503,7 +503,7 @@ function verificarAssinaturaMP(req, secret) {
 
   // Proteção contra Replay Attacks: tolerância máxima de 15 minutos (900 segundos)
   const nowSec = Math.floor(Date.now() / 1000);
-  const tsNum = parseInt(ts, 10);
+  const tsNum = Number.parseInt(ts, 10);
   if (isNaN(tsNum) || Math.abs(nowSec - tsNum) > 900) {
     console.warn(`[SaaS Webhook] Rejeitado por Replay Attack / Timestamp expirado: ts=${ts}, now=${nowSec}`);
     return false;
@@ -669,7 +669,7 @@ function base32Decode(base32) {
   }
   for (let i = 0; i + 8 <= bits.length; i += 8) {
     const chunk = bits.substring(i, i + 8);
-    hex = hex + parseInt(chunk, 2).toString(16).padStart(2, '0');
+    hex = hex + Number.parseInt(chunk, 2).toString(16).padStart(2, '0');
   }
   return Buffer.from(hex, 'hex');
 }
@@ -943,8 +943,8 @@ const deleteComunicadoSaaS = async (req, res) => {
 
 const syncEnvFile = (keyValues) => {
   try {
-    const fs = require('fs');
-    const path = require('path');
+    const fs = require("node:fs");
+    const path = require("node:path");
     const envPath = path.join(__dirname, '../../.env');
     if (!fs.existsSync(envPath)) return;
 

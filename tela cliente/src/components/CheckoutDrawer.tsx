@@ -25,7 +25,7 @@ export default function CheckoutDrawer({
   initialPhone = '', 
   onClose, 
   onConfirm 
-}: Props) {
+}: Readonly<Props>) {
   const [name, setName] = useState(initialName);
   const [phone, setPhone] = useState(initialPhone);
   const [cpf, setCpf] = useState('');
@@ -245,12 +245,12 @@ function Field({
   label,
   error,
   children,
-}: {
+}: Readonly<{
   icon: React.ReactNode;
   label: string;
   error?: string;
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <div>
       <label className="block text-xs font-semibold text-muted mb-1.5 ml-1">{label}</label>

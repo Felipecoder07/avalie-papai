@@ -13,7 +13,7 @@
  *   enviarAvisosVencimento()        — Envia e-mails de aviso de vencimento próximo (cron diário)
  */
 
-const crypto = require('crypto');
+const crypto = require("node:crypto");
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
 const { gerarPixEMV } = require('../utils/pixPayload');
@@ -136,7 +136,7 @@ const gerarPixFaturaSaaS = async (faturaId) => {
       'X-Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify({
-      transaction_amount: parseFloat(fatura.valor.toFixed(2)),
+      transaction_amount: Number.parseFloat(fatura.valor.toFixed(2)),
       description: `Mensalidade SaaS Arenix — ${fatura.arena_nome} (Fatura #${fatura.id})`,
       payment_method_id: 'pix',
       date_of_expiration: expiraEmISO,

@@ -17,7 +17,7 @@ export default function CourtSelector({
   selectedSport = 'Todos',
   availableSports = [],
   onSelectSport
-}: Props) {
+}: Readonly<Props>) {
   return (
     <section className="px-4 pt-5">
       {/* Barra de Filtro de Modalidades / Esportes */}

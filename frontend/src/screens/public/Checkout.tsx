@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { safeStorage } from '../../utils/safeStorage';
 import '../../assets/css/landing.css';
 import '../../assets/css/checkout.css';
 
@@ -81,13 +82,13 @@ const performRegistrationAndLogin = async (
 
   if (loginResponse.ok) {
     const loginData = await loginResponse.json();
-    localStorage.setItem('courtmanager_token', loginData.token);
-    localStorage.setItem('courtmanager_user', JSON.stringify(loginData.usuario));
+    safeStorage.setItem('courtmanager_token', loginData.token);
+    safeStorage.setItem('courtmanager_user', JSON.stringify(loginData.usuario));
     if (loginData.usuario.arena_nome) {
-      localStorage.setItem('arena_nome', loginData.usuario.arena_nome);
+      safeStorage.setItem('arena_nome', loginData.usuario.arena_nome);
     }
     if (loginData.usuario.arena_slug) {
-      localStorage.setItem('arena_slug', loginData.usuario.arena_slug);
+      safeStorage.setItem('arena_slug', loginData.usuario.arena_slug);
     }
     navigate('/admin/dashboard');
   } else {

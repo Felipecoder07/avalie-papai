@@ -73,7 +73,7 @@ export interface Coluna {
 const formatCurrencyInput = (value: string) => {
   const digits = value.replace(/\D/g, '');
   if (!digits) return '';
-  const num = parseInt(digits, 10) / 100;
+  const num = Number.parseInt(digits, 10) / 100;
   return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
@@ -84,7 +84,7 @@ const formatFloatToCurrencyInput = (num: number) => {
 const parseCurrencyToFloat = (value: string) => {
   if (!value) return 0;
   const clean = value.replace(/\./g, '').replace(',', '.');
-  return parseFloat(clean) || 0;
+  return Number.parseFloat(clean) || 0;
 };
 
 const getWeekRange = (dateStr: string) => {
@@ -154,8 +154,8 @@ export const AdminGradeSlot: React.FC<AdminGradeSlotProps> = ({
 
   if (res) {
     if (res.hora_inicio === hourStr) {
-      const hI = parseInt(res.hora_inicio.split(':')[0], 10);
-      const hF = parseInt(res.hora_fim.split(':')[0], 10);
+      const hI = Number.parseInt(res.hora_inicio.split(':')[0], 10);
+      const hF = Number.parseInt(res.hora_fim.split(':')[0], 10);
       const span = hF - hI;
 
       let cssClass = 's-pending';
@@ -520,8 +520,8 @@ export function AdminReservas() {
     const abertura = q.hora_abertura || '08:00';
     const fechamento = q.hora_fechamento || '22:00';
 
-    const minHour = parseInt(abertura.split(':')[0], 10);
-    const maxHour = parseInt(fechamento.split(':')[0], 10);
+    const minHour = Number.parseInt(abertura.split(':')[0], 10);
+    const maxHour = Number.parseInt(fechamento.split(':')[0], 10);
 
     const resQuadra = (grade.reservas || []).filter(r => r.quadra_id === nrQuadraId && r.data_reserva === nrData);
     const bqQuadra = (grade.bloqueios || []).filter(b => b.quadra_id === nrQuadraId && b.data_bloqueio === nrData);
@@ -564,9 +564,9 @@ export function AdminReservas() {
 
     const q = grade.quadras.find(x => x.id === nrQuadraId);
     const fechamento = q?.hora_fechamento || '22:00';
-    const maxH = parseInt(fechamento.split(':')[0], 10);
+    const maxH = Number.parseInt(fechamento.split(':')[0], 10);
 
-    const hI = parseInt(nrInicio.split(':')[0], 10);
+    const hI = Number.parseInt(nrInicio.split(':')[0], 10);
     const options: string[] = [];
 
     for (let h = hI + 1; h <= maxH; h++) {
@@ -624,8 +624,8 @@ export function AdminReservas() {
     const abertura = q.hora_abertura || '08:00';
     const fechamento = q.hora_fechamento || '22:00';
 
-    const minHour = parseInt(abertura.split(':')[0], 10);
-    const maxHour = parseInt(fechamento.split(':')[0], 10);
+    const minHour = Number.parseInt(abertura.split(':')[0], 10);
+    const maxHour = Number.parseInt(fechamento.split(':')[0], 10);
 
     const resQuadra = (grade.reservas || []).filter(r => r.quadra_id === bqQuadraId && r.data_reserva === bqData);
     const bqQuadraList = (grade.bloqueios || []).filter(b => b.quadra_id === bqQuadraId && b.data_bloqueio === bqData);
@@ -668,9 +668,9 @@ export function AdminReservas() {
 
     const q = grade.quadras.find(x => x.id === bqQuadraId);
     const fechamento = q?.hora_fechamento || '22:00';
-    const maxH = parseInt(fechamento.split(':')[0], 10);
+    const maxH = Number.parseInt(fechamento.split(':')[0], 10);
 
-    const hI = parseInt(bqInicio.split(':')[0], 10);
+    const hI = Number.parseInt(bqInicio.split(':')[0], 10);
     const options: string[] = [];
 
     for (let h = hI + 1; h <= maxH; h++) {
@@ -802,7 +802,7 @@ export function AdminReservas() {
 
     try {
       const isPixQrCode = nrRegistrarPagamento && nrPagMetodo === 'Pix (QR Code na Tela)';
-      const valPago = parseFloat(nrPagValor.replace(',', '.')) || nrValorPrevisto;
+      const valPago = Number.parseFloat(nrPagValor.replace(',', '.')) || nrValorPrevisto;
 
       const payload: any = {
         cliente_id: finalClienteId,
@@ -1241,8 +1241,8 @@ export function AdminReservas() {
       if (q.hora_abertura && q.hora_abertura < earliest) earliest = q.hora_abertura;
       if (q.hora_fechamento && q.hora_fechamento > latest) latest = q.hora_fechamento;
     });
-    const minHour = earliest !== '23:59' ? parseInt(earliest.split(':')[0], 10) : 8;
-    let maxHour = latest !== '00:00' ? parseInt(latest.split(':')[0], 10) : 22;
+    const minHour = earliest !== '23:59' ? Number.parseInt(earliest.split(':')[0], 10) : 8;
+    let maxHour = latest !== '00:00' ? Number.parseInt(latest.split(':')[0], 10) : 22;
 
 
     // Time Slots de 1 em 1 hora

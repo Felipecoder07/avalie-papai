@@ -7,16 +7,6 @@ const jwt = require('jsonwebtoken');
 process.env.NODE_ENV = 'test';
 const JWT_SECRET = process.env.JWT_SECRET || 'secret-jwt-courtmanager-2026';
 
-const dbPath = path.resolve(__dirname, '../data/courtmanager_test.sqlite');
-
-// Limpa o banco de teste antigo se existir para garantir isolamento total
-if (fs.existsSync(dbPath)) {
-  try {
-    fs.unlinkSync(dbPath);
-  } catch (e) {
-    console.warn("Erro ao deletar banco de teste, pode estar travado:", e.message);
-  }
-}
 
 const db = require('../src/config/database');
 const initDb = require('../src/config/init_db');
@@ -36,24 +26,27 @@ describe('Testes de Integração de Reservas e Validação de Conflito de Horár
     initDb();
     await new Promise(resolve => setTimeout(resolve, 1000));
 
+    // Garante limpeza prévia de tenant 1 para isolamento dos testes
+    await db.runAsync("DELETE FROM Reservas WHERE tenant_id = 1");
+    await db.runAsync("DELETE FROM Quadras WHERE tenant_id = 1");
+    await db.runAsync("DELETE FROM Clientes WHERE tenant_id = 1");
+    await db.runAsync("DELETE FROM Arenas WHERE id = 1");
+
     // Insere dados de teste específicos (Arena, Quadras e Cliente)
-    await db.runAsync("INSERT OR IGNORE INTO Arenas (id, nome, status) VALUES (1, 'Arena Teste', 1)");
-    await db.runAsync("INSERT OR IGNORE INTO Clientes (id, tenant_id, nome, telefone) VALUES (1, 1, 'Cliente Teste', '11999999999')");
-    await db.runAsync("INSERT OR IGNORE INTO Quadras (id, tenant_id, nome, tipo, preco_base, hora_abertura, hora_fechamento) VALUES (1, 1, 'Quadra 1 Areia', 'Areia', 100, '08:00', '22:00')");
-    await db.runAsync("INSERT OR IGNORE INTO Quadras (id, tenant_id, nome, tipo, preco_base, hora_abertura, hora_fechamento) VALUES (2, 1, 'Quadra 2 Padel', 'Saibro', 120, '08:00', '22:00')");
+    await db.runAsync("INSERT INTO Arenas (id, nome, status) VALUES (1, 'Arena Teste', 1)");
+    await db.runAsync("INSERT INTO Clientes (id, tenant_id, nome, telefone) VALUES (1, 1, 'Cliente Teste', '11999999999')");
+    await db.runAsync("INSERT INTO Quadras (id, tenant_id, nome, tipo, preco_base, hora_abertura, hora_fechamento, status, modalidades) VALUES (1, 1, 'Quadra 1 Areia', 'Areia', 100, '08:00', '22:00', 'Ativa', '[]')");
+    await db.runAsync("INSERT INTO Quadras (id, tenant_id, nome, tipo, preco_base, hora_abertura, hora_fechamento, status, modalidades) VALUES (2, 1, 'Quadra 2 Padel', 'Saibro', 120, '08:00', '22:00', 'Ativa', '[]')");
   });
 
   afterAll(async () => {
-    // Fecha o banco de dados e tenta deletar o arquivo temporário
-    await new Promise((resolve) => {
-      db.close(() => {
-        resolve();
-      });
-    });
-    if (fs.existsSync(dbPath)) {
-      try {
-        fs.unlinkSync(dbPath);
-      } catch (e) {}
+    try {
+      await db.runAsync("DELETE FROM Reservas WHERE tenant_id = 1");
+      await db.runAsync("DELETE FROM Quadras WHERE tenant_id = 1");
+      await db.runAsync("DELETE FROM Clientes WHERE tenant_id = 1");
+      await db.runAsync("DELETE FROM Arenas WHERE id = 1");
+    } catch {
+      // Ignora erro de limpeza
     }
   });
 

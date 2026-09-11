@@ -7,7 +7,7 @@ interface LineChartProps {
   formatValue?: (v: number) => string;
 }
 
-export function LineChart({ data, height = 240, color = '#1C1A18', formatValue = (v) => String(v) }: LineChartProps) {
+export function LineChart({ data, height = 240, color = '#1C1A18', formatValue = (v) => String(v) }: Readonly<LineChartProps>) {
   const options: any = {
     chart: {
       type: 'line',

@@ -16,7 +16,7 @@ async function executarLimpezaFantasmas() {
   try {
     // 1. Obter prazo de abandono configurado (default: 7 dias)
     const prazoRow = await db.getAsync("SELECT valor FROM ConfiguracoesSaaS WHERE chave = 'dias_abandono_cadastro'");
-    const diasAbandono = parseInt(prazoRow?.valor || '7', 10);
+    const diasAbandono = Number.parseInt(prazoRow?.valor || '7', 10);
 
     console.log(`[Job Fantasmas] Iniciando limpeza de cadastros com abandono > ${diasAbandono} dias...`);
 

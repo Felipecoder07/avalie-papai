@@ -35,8 +35,8 @@ const NOMES_MESES = [
 function formatarCompetencia(dataVencimentoStr, ciclo = 'mensal') {
   if (!dataVencimentoStr) return 'Mensalidade';
   const [anoStr, mesStr] = dataVencimentoStr.split('-');
-  const ano = parseInt(anoStr, 10);
-  const mesIdx = parseInt(mesStr, 10) - 1;
+  const ano = Number.parseInt(anoStr, 10);
+  const mesIdx = Number.parseInt(mesStr, 10) - 1;
   const mesNome = NOMES_MESES[mesIdx] || mesStr;
 
   if (ciclo === 'anual') {
@@ -50,12 +50,12 @@ function formatarCompetencia(dataVencimentoStr, ciclo = 'mensal') {
  * preservando o dia de aniversário da assinatura com ajuste para o tamanho do mês.
  */
 function calcularProximaDataVencimento(dataBaseStr, diaVencimento = 10, ciclo = 'mensal') {
-  const diaAlvo = Math.min(Math.max(parseInt(diaVencimento, 10) || 10, 1), 31);
+  const diaAlvo = Math.min(Math.max(Number.parseInt(diaVencimento, 10) || 10, 1), 31);
 
   if (dataBaseStr) {
     const [anoStr, mesStr] = dataBaseStr.split('-');
-    let ano = parseInt(anoStr, 10);
-    let mes = parseInt(mesStr, 10); // 1 a 12
+    let ano = Number.parseInt(anoStr, 10);
+    let mes = Number.parseInt(mesStr, 10); // 1 a 12
 
     if (ciclo === 'anual') {
       ano += 1;

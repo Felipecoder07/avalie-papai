@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
+const path = require("node:path");
 
 const app = express();
 app.disable('x-powered-by');
@@ -29,7 +29,7 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.set('trust proxy', 1);
 
 // Servir arquivos estáticos do frontend React e Uploads de Mídia
-const fs = require('fs');
+const fs = require("node:fs");
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });

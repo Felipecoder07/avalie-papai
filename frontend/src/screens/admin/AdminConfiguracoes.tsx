@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { getStoredUser } from '../../utils/session';
+import { safeStorage } from '../../utils/safeStorage';
 import '../../assets/css/configuracoes.css';
 
 export interface ModalidadeItem {
@@ -84,13 +86,13 @@ const getDefaultSportPrice = (sportNameOrQuadras: Quadra[] | string, sportNameOp
 };
 
 const formatCurrency = (val: number) => {
-  return 'R$ ' + parseFloat(val as any).toFixed(2).replace('.', ',');
+  return 'R$ ' + Number.parseFloat(val as any).toFixed(2).replace('.', ',');
 };
 
 const formatCurrencyInput = (value: string) => {
   const digits = value.replace(/\D/g, '');
   if (!digits) return '';
-  const num = parseInt(digits, 10) / 100;
+  const num = Number.parseInt(digits, 10) / 100;
   return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
@@ -102,7 +104,7 @@ const formatFloatToCurrencyInput = (num: number) => {
 const parseCurrencyToFloat = (value: string) => {
   if (!value) return 0;
   const clean = value.replace(/\./g, '').replace(',', '.');
-  return parseFloat(clean) || 0;
+  return Number.parseFloat(clean) || 0;
 };
 
 export function AdminConfiguracoes() {
@@ -519,13 +521,12 @@ export function AdminConfiguracoes() {
         showToast('Usuário atualizado com sucesso!', 'success');
 
         // Update active sidebar if current user edits themselves
-        const loggedUserStr = localStorage.getItem('courtmanager_user');
-        if (loggedUserStr) {
-          const loggedUser = JSON.parse(loggedUserStr);
+        const loggedUser = getStoredUser();
+        if (loggedUser?.id !== undefined) {
           if (loggedUser.id.toString() === nuId.toString()) {
             loggedUser.nome = nuNome;
             loggedUser.perfil = nuPerfil;
-            localStorage.setItem('courtmanager_user', JSON.stringify(loggedUser));
+            safeStorage.setItem('courtmanager_user', JSON.stringify(loggedUser));
             // Trigger local navigation update if page refreshes
           }
         }
@@ -940,7 +941,7 @@ export function AdminConfiguracoes() {
                 style={{ width: '72px', textAlign: 'center' }}
                 value={arena.alerta_pagamento_minutos}
                 onChange={(e) => {
-                  const val = parseInt(e.target.value) || 5;
+                  const val = Number.parseInt(e.target.value) || 5;
                   setArena({ ...arena, alerta_pagamento_minutos: val });
                 }}
                 aria-label="Minutos para alerta de pagamento pendente"

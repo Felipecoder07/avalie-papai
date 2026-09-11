@@ -117,7 +117,7 @@ const registrarPagamento = async (req, res) => {
               <p>Confirmamos o recebimento do seu pagamento referente ao agendamento de quadra.</p>
               <div style="background-color: #F7FAFC; border: 1px solid #E2E8F0; padding: 15px; border-radius: 5px; margin: 20px 0;">
                 <strong>Detalhes do Pagamento:</strong><br />
-                💰 <strong>Valor Pago:</strong> R$ ${parseFloat(valor).toFixed(2).replace('.', ',')}<br />
+                💰 <strong>Valor Pago:</strong> R$ ${Number.parseFloat(valor).toFixed(2).replace('.', ',')}<br />
                 💳 <strong>Método:</strong> ${metodo}<br />
                 📅 <strong>Data da Reserva:</strong> ${details.data_reserva.split('-').reverse().join('/')}<br />
                 🕒 <strong>Horário:</strong> ${details.hora_inicio} às ${details.hora_fim}<br />

@@ -191,7 +191,7 @@ router.get('/faturas', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/faturas/:id/gerar-pix', async (req, res) => {
   const tenantId = req.user.tenant_id;
-  const faturaId = parseInt(req.params.id, 10);
+  const faturaId = Number.parseInt(req.params.id, 10);
 
   if (!tenantId) {
     return res.status(400).json({ error: 'Tenant ID não associado ao usuário.' });
@@ -227,7 +227,7 @@ router.post('/faturas/:id/simular-pagamento', async (req, res) => {
   }
 
   const tenantId = req.user.tenant_id;
-  const faturaId = parseInt(req.params.id, 10);
+  const faturaId = Number.parseInt(req.params.id, 10);
 
   if (!tenantId) {
     return res.status(400).json({ error: 'Tenant ID não associado ao usuário.' });
@@ -415,7 +415,7 @@ function calcularValoresUpgradePlano(novoPlano, ciclo) {
     const precoMensalAnual = (novoPlano.valor_anual && novoPlano.valor_anual > 0)
       ? novoPlano.valor_anual
       : (novoPlano.valor_mensal * 0.8);
-    valorFinal = parseFloat((precoMensalAnual * 12).toFixed(2));
+    valorFinal = Number.parseFloat((precoMensalAnual * 12).toFixed(2));
     descricaoFinal = `Assinatura Plano ${novoPlano.nome} (Anual - 12 meses)`;
   }
 
@@ -542,7 +542,7 @@ router.post('/adiantar-fatura', async (req, res) => {
       const precoMensalAnual = (arena.valor_anual && arena.valor_anual > 0)
         ? arena.valor_anual
         : (arena.valor_mensal * 0.8);
-      valorFinal = parseFloat((precoMensalAnual * 12).toFixed(2));
+      valorFinal = Number.parseFloat((precoMensalAnual * 12).toFixed(2));
     }
 
     // 1. Verificar se já existe uma fatura pendente/atrasada (Idempotência)
@@ -626,7 +626,7 @@ router.post('/adiantar-fatura', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/faturas/:id/recibo', async (req, res) => {
   const tenantId = req.user.tenant_id;
-  const faturaId = parseInt(req.params.id, 10);
+  const faturaId = Number.parseInt(req.params.id, 10);
 
   if (!tenantId) {
     return res.status(400).json({ error: 'Tenant ID não associado ao usuário.' });
@@ -651,7 +651,7 @@ router.get('/faturas/:id/recibo', async (req, res) => {
       return res.status(400).json({ error: 'O recibo só fica disponível após a confirmação do pagamento.' });
     }
 
-    const valorNumerico = parseFloat(fatura.valor) || 0;
+    const valorNumerico = Number.parseFloat(fatura.valor) || 0;
 
     res.json({
       recibo_numero: `REC-${String(fatura.id).padStart(6, '0')}`,

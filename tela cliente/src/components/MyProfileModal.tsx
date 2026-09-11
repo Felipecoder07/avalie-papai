@@ -15,7 +15,7 @@ interface Props {
   onLogout?: () => void;
 }
 
-export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate, onLogout }: Props) {
+export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate, onLogout }: Readonly<Props>) {
   const [name, setName] = useState(athlete.name);
   const [phone, setPhone] = useState(athlete.phone);
   const [cpf, setCpf] = useState('');

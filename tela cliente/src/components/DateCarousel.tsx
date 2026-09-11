@@ -36,7 +36,7 @@ function getNext7Days(): DateItem[] {
   return list;
 }
 
-export default function DateCarousel({ dates, selectedISO, onSelect }: Props) {
+export default function DateCarousel({ dates, selectedISO, onSelect }: Readonly<Props>) {
   const datesList = dates && dates.length > 0 ? dates : getNext7Days();
 
   return (

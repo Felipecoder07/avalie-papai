@@ -30,7 +30,7 @@ export function MasterFinanceiro() {
   const formatCurrencyInput = (value: string) => {
     const digits = value.replace(/\D/g, '');
     if (!digits) return '';
-    const num = parseInt(digits, 10) / 100;
+    const num = Number.parseInt(digits, 10) / 100;
     return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
@@ -41,7 +41,7 @@ export function MasterFinanceiro() {
   const parseCurrencyToFloat = (value: string) => {
     if (!value) return 0;
     const clean = value.replace(/\./g, '').replace(',', '.');
-    return parseFloat(clean) || 0;
+    return Number.parseFloat(clean) || 0;
   };
 
   const loadData = async () => {
@@ -144,7 +144,7 @@ export function MasterFinanceiro() {
     if (parts.length !== 2) return monthStr;
     const year = parts[0].substring(2);
     const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-    const monthIndex = parseInt(parts[1], 10) - 1;
+    const monthIndex = Number.parseInt(parts[1], 10) - 1;
     return `${months[monthIndex]}/${year}`;
   };
 
@@ -390,14 +390,14 @@ export function MasterFinanceiro() {
                 <Input 
                   type="number" 
                   value={editPlan.max_quadras} 
-                  onChange={(e: any) => setEditPlan({ ...editPlan, max_quadras: parseInt(e.target.value, 10) || 0 })} 
+                  onChange={(e: any) => setEditPlan({ ...editPlan, max_quadras: Number.parseInt(e.target.value, 10) || 0 })} 
                 />
               </Field>
               <Field label="Limite de usuários">
                 <Input 
                   type="number" 
                   value={editPlan.max_usuarios} 
-                  onChange={(e: any) => setEditPlan({ ...editPlan, max_usuarios: parseInt(e.target.value, 10) || 0 })} 
+                  onChange={(e: any) => setEditPlan({ ...editPlan, max_usuarios: Number.parseInt(e.target.value, 10) || 0 })} 
                 />
               </Field>
             </div>

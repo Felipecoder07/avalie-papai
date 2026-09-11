@@ -61,7 +61,7 @@ interface KPIResumo {
 const formatCurrencyInput = (value: string) => {
   const digits = value.replace(/\D/g, '');
   if (!digits) return '';
-  const num = parseInt(digits, 10) / 100;
+  const num = Number.parseInt(digits, 10) / 100;
   return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
@@ -72,7 +72,7 @@ const formatFloatToCurrencyInput = (num: number) => {
 const parseCurrencyToFloat = (value: string) => {
   if (!value) return 0;
   const clean = value.replace(/\./g, '').replace(',', '.');
-  return parseFloat(clean) || 0;
+  return Number.parseFloat(clean) || 0;
 };
 
 const formatCurrency = (val: number) => {

@@ -5,7 +5,7 @@ const listarClientes = async (req, res) => {
   try {
     const tenant_id = req.user.tenant_id;
     // Suporta ?ativo=0 para arquivados, ?ativo=1 ou sem param para ativos
-    const ativo = req.query.ativo !== undefined ? parseInt(req.query.ativo) : 1;
+    const ativo = req.query.ativo !== undefined ? Number.parseInt(req.query.ativo) : 1;
     const clientes = await db.allAsync(
       'SELECT id, nome, email, telefone, ativo, criado_em FROM Clientes WHERE tenant_id = ? AND ativo = ? ORDER BY nome ASC',
       [tenant_id, ativo]

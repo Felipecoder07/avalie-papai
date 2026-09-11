@@ -10,7 +10,7 @@ async function executarBloqueioInadimplencia() {
   try {
     // 1. Obter os dias de tolerância configurados no SaaS (default: 5 dias)
     const tolRow = await db.getAsync("SELECT valor FROM ConfiguracoesSaaS WHERE chave = 'dias_tolerancia_bloqueio'");
-    const diasTolerancia = parseInt(tolRow?.valor || '5', 10);
+    const diasTolerancia = Number.parseInt(tolRow?.valor || '5', 10);
 
     // 2. Buscar arenas ativas com faturas vencidas além do prazo de tolerância
     const arenasInadimplentes = await db.allAsync(`

@@ -69,7 +69,7 @@ const ConfigTabGeral: React.FC<ConfigTabGeralProps> = ({
                 setTrialDays('1');
                 return;
               }
-              const val = Math.max(1, parseInt(raw, 10) || 1);
+              const val = Math.max(1, Number.parseInt(raw, 10) || 1);
               setTrialDays(String(val));
             }}
             style={{ width: '80px', textAlign: 'center' }}
@@ -111,7 +111,7 @@ const ConfigTabGeral: React.FC<ConfigTabGeralProps> = ({
           onChange={(e) => {
             const raw = e.target.value;
             if (raw === '') { setDiasAbandono('7'); return; }
-            const val = Math.max(1, parseInt(raw, 10) || 7);
+            const val = Math.max(1, Number.parseInt(raw, 10) || 7);
             setDiasAbandono(String(val));
           }}
           style={{ width: '80px', textAlign: 'center' }}

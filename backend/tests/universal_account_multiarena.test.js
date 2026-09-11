@@ -116,7 +116,7 @@ describe('Testes de Integração de Estresse — Conta Universal Multiarena (Mod
         nome: 'Atleta Universal',
         telefone: '11988887777',
         quadra_id: 9981,
-        data_reserva: '2026-09-10',
+        data_reserva: '2026-12-20',
         hora_inicio: '18:00',
         hora_fim: '19:00'
       });

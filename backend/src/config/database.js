@@ -1,6 +1,6 @@
 const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-const fs = require('fs');
+const path = require("node:path");
+const fs = require("node:fs");
 
 const dataDir = path.resolve(__dirname, '../../data');
 if (!fs.existsSync(dataDir)) {

@@ -28,8 +28,8 @@ async function validarReservaECalcularValorCobrar(reserva_id, user, valorParam) 
   }
 
   let valorCobrar = saldoRestante;
-  if (valorParam !== undefined && valorParam !== null && parseFloat(valorParam) > 0) {
-    const valorCustom = parseFloat(valorParam);
+  if (valorParam !== undefined && valorParam !== null && Number.parseFloat(valorParam) > 0) {
+    const valorCustom = Number.parseFloat(valorParam);
     if (valorCustom > saldoRestante + 0.01) {
       throw { status: 400, message: `O valor informado (R$ ${valorCustom.toFixed(2)}) não pode ser maior que o saldo devedor (R$ ${saldoRestante.toFixed(2)}).` };
     }

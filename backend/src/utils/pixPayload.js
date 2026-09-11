@@ -20,7 +20,7 @@ function gerarPixEMV({ chave, nome, cidade = 'SAO PAULO', valor, txid = '***' })
     .substring(0, 15)
     .toUpperCase();
 
-  const valStr = parseFloat(valor).toFixed(2);
+  const valStr = Number.parseFloat(valor).toFixed(2);
   const cleanTxid = (txid || '***').replace(/[^a-zA-Z0-9]/g, '').substring(0, 25) || '***';
 
   const formatField = (id, value) => {

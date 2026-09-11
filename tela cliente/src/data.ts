@@ -75,7 +75,7 @@ const busyByCourt: Record<string, number[]> = {
 
 export function getSlotsForCourtAndDate(courtId: string, dateISO: string): Slot[] {
   const court = courts.find((c) => c.id === courtId)!;
-  const seed = dateISO.split('-').reduce((a, b) => a + parseInt(b), 0);
+  const seed = dateISO.split('-').reduce((a, b) => a + Number.parseInt(b), 0);
   const pattern = busyByCourt[courtId] ?? [];
   const shifted = pattern.map((p) => (p + seed) % 24);
   return buildSlots(courtId, court.pricePerHour, dateISO, shifted);

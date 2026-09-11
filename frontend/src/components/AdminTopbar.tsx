@@ -2,17 +2,18 @@ import { useState, useEffect } from 'react';
 import { Menu, Bell, ChevronRight, X, Globe, Copy, ExternalLink, Share2, Check } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { NAV_ITEMS } from './AdminSidebar';
+import { safeStorage } from '../utils/safeStorage';
 
 interface AdminTopbarProps {
   onToggleSidebar: () => void;
 }
 
-export function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
+export function AdminTopbar({ onToggleSidebar }: Readonly<AdminTopbarProps>) {
   const location = useLocation();
   const item = NAV_ITEMS.find((n) => n.path === location.pathname);
 
-  const [arenaName, setArenaName] = useState(() => localStorage.getItem('arena_nome') || 'Arena Principal');
-  const [arenaSlug, setArenaSlug] = useState(() => localStorage.getItem('arena_slug') || 'felp-arena');
+  const [arenaName, setArenaName] = useState(() => safeStorage.getItem('arena_nome') || 'Arena Principal');
+  const [arenaSlug, setArenaSlug] = useState(() => safeStorage.getItem('arena_slug') || 'felp-arena');
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showPortalMenu, setShowPortalMenu] = useState(false);
@@ -20,13 +21,13 @@ export function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
 
   useEffect(() => {
     const handleChanged = () => {
-      setArenaName(localStorage.getItem('arena_nome') || 'Arena Principal');
-      setArenaSlug(localStorage.getItem('arena_slug') || 'felp-arena');
+      setArenaName(safeStorage.getItem('arena_nome') || 'Arena Principal');
+      setArenaSlug(safeStorage.getItem('arena_slug') || 'felp-arena');
     };
     window.addEventListener('arena_nome_changed', handleChanged);
 
     // Busca dados atualizados da arena logada para sincronizar nome e slug reais
-    const token = localStorage.getItem('courtmanager_token');
+    const token = safeStorage.getItem('courtmanager_token');
     if (token) {
       fetch('/api/arenas/minha', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -35,11 +36,11 @@ export function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
         .then(data => {
           if (data && data.slug) {
             setArenaSlug(data.slug);
-            localStorage.setItem('arena_slug', data.slug);
+            safeStorage.setItem('arena_slug', data.slug);
           }
           if (data && data.nome) {
             setArenaName(data.nome);
-            localStorage.setItem('arena_nome', data.nome);
+            safeStorage.setItem('arena_nome', data.nome);
           }
         })
         .catch(() => {});
@@ -49,7 +50,7 @@ export function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
   }, []);
 
   const fetchNotifications = async () => {
-    const token = localStorage.getItem('courtmanager_token');
+    const token = safeStorage.getItem('courtmanager_token');
     if (!token) return;
     try {
       const res = await fetch('/api/auth/comunicados/ativos', {

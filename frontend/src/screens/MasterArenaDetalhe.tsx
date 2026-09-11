@@ -194,7 +194,7 @@ const ArenaTabLogs: React.FC<ArenaTabLogsProps> = ({ logs }) => {
   );
 };
 
-export function MasterArenaDetalhe({ onNavigate }: Props) {
+export function MasterArenaDetalhe({ onNavigate }: Readonly<Props>) {
   const [searchParams] = useSearchParams();
   const arenaId = searchParams.get('id');
 

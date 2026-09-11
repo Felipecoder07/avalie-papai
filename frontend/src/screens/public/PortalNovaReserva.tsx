@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getStoredUser } from '../../utils/session';
+import { safeStorage } from '../../utils/safeStorage';
 
 interface Quadra {
   id: number;
@@ -16,9 +18,8 @@ interface ReservaExistente {
 
 export function PortalNovaReserva() {
   const navigate = useNavigate();
-  const token = localStorage.getItem('courtmanager_token');
-  const userJson = localStorage.getItem('courtmanager_user');
-  const user = userJson ? JSON.parse(userJson) : null;
+  const token = safeStorage.getItem('courtmanager_token');
+  const user = getStoredUser();
 
   // Wizard state
   const [step, setStep] = useState(1);
@@ -113,6 +114,10 @@ export function PortalNovaReserva() {
   // Processar pagamento e reserva
   const processarAgendamento = async () => {
     if (!selQuad || !metodoOnline) return;
+    if (!user) {
+      navigate('/login');
+      return;
+    }
     setCriandoReserva(true);
 
     const [h, m] = selTime.split(':').map(Number);

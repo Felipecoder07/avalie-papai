@@ -9,7 +9,7 @@ interface TopbarProps {
   searchPlaceholder?: string;
 }
 
-export function Topbar({ onToggleSidebar, search, onSearchChange, searchPlaceholder }: TopbarProps) {
+export function Topbar({ onToggleSidebar, search, onSearchChange, searchPlaceholder }: Readonly<TopbarProps>) {
   const location = useLocation();
   const item = NAV_ITEMS.find((n) => n.path === location.pathname);
 

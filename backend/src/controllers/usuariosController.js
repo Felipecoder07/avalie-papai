@@ -55,7 +55,7 @@ const criarUsuario = async (req, res) => {
       }
     }
 
-    const crypto = require('crypto');
+    const crypto = require("node:crypto");
     // Gerar token de ativação (válido por 7 dias)
     const token = crypto.randomBytes(32).toString('hex');
     const expires = new Date(Date.now() + 7 * 24 * 3600000).toISOString();

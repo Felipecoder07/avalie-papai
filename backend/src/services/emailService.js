@@ -1,7 +1,7 @@
 const nodemailer = require('nodemailer');
 
 const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
-const port = parseInt(process.env.EMAIL_PORT || '465');
+const port = Number.parseInt(process.env.EMAIL_PORT || '465');
 const user = process.env.EMAIL_USER;
 const pass = process.env.EMAIL_PASS;
 

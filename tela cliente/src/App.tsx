@@ -387,7 +387,7 @@ export default function App() {
           const activeSport = selectedSport !== 'Todos' ? selectedSport : (activeCourt?.modalities?.[0] || 'Beach Tennis');
           
           const mappedSlots: Slot[] = qData.slots.map((s: any) => {
-            const hInt = parseInt(s.hora_inicio.split(':')[0], 10);
+            const hInt = Number.parseInt(s.hora_inicio.split(':')[0], 10);
             const block = hInt < 12 ? 'manha' : hInt < 18 ? 'tarde' : 'noite';
             return {
               id: `${courtId}-${dateISO}-${s.hora_inicio}`,
@@ -644,7 +644,7 @@ export default function App() {
     try {
       const activeSport = dataInput.sport || sessionSport || (selectedSport !== 'Todos' ? selectedSport : (court?.modalities?.[0] || 'Beach Tennis'));
       const payloadItens = dataInput.slots.map(s => ({
-        quadra_id: parseInt(s.courtId, 10),
+        quadra_id: Number.parseInt(s.courtId, 10),
         data_reserva: s.dateISO,
         hora_inicio: s.start,
         hora_fim: s.end,

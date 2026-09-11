@@ -1,6 +1,6 @@
 const db = require('../config/database');
 const { sendEmail } = require('./emailService');
-const crypto = require('crypto');
+const crypto = require("node:crypto");
 
 const atualizarStatusReservaInterna = async (reserva_id, tenant_id) => {
   const reserva = await db.getAsync('SELECT valor_total, status, status_pagamento FROM Reservas WHERE id = ? AND tenant_id = ?', [reserva_id, tenant_id]);
@@ -26,7 +26,7 @@ const atualizarStatusReservaInterna = async (reserva_id, tenant_id) => {
 };
 
 async function validarSegurançaLiquidacao(transacao, payload) {
-  if (payload.valor_pago !== undefined && Math.abs(parseFloat(payload.valor_pago) - transacao.valor) > 0.01) {
+  if (payload.valor_pago !== undefined && Math.abs(Number.parseFloat(payload.valor_pago) - transacao.valor) > 0.01) {
     throw new Error('O valor pago na maquineta é divergente do saldo registrado na reserva.');
   }
 
@@ -200,7 +200,7 @@ const criarCobrancaPix = async (reserva_id, valor, tenant_id) => {
         'X-Idempotency-Key': idempotencyKey
       },
       body: JSON.stringify({
-        transaction_amount: parseFloat(valor.toFixed(2)),
+        transaction_amount: Number.parseFloat(valor.toFixed(2)),
         description: `Reserva #${reserva_id} no Arenix`,
         payment_method_id: 'pix',
         payer: {
@@ -272,7 +272,7 @@ const criarCobrancaCartao = async (reserva_id, valor, card_data, tenant_id) => {
         'X-Idempotency-Key': idempotencyKey
       },
       body: JSON.stringify({
-        transaction_amount: parseFloat(valor.toFixed(2)),
+        transaction_amount: Number.parseFloat(valor.toFixed(2)),
         token: card_data.token,
         description: `Reserva #${reserva_id} no Arenix`,
         installments: 1,
@@ -334,7 +334,7 @@ const criarCobrancaMaquineta = async (reserva_id, valor, tenant_id) => {
         'X-Idempotency-Key': idempotencyKey
       },
       body: JSON.stringify({
-        amount: parseFloat(valor.toFixed(2)),
+        amount: Number.parseFloat(valor.toFixed(2)),
         description: `Reserva #${reserva_id} no Arenix`,
         payment: { installments: 1, type: 'credit_card' }
       })

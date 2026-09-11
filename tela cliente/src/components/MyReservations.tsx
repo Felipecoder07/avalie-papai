@@ -72,7 +72,7 @@ interface CancelResult {
   };
 }
 
-export default function MyReservations({ slug, athlete, open, onClose, onPayPending }: Props) {
+export default function MyReservations({ slug, athlete, open, onClose, onPayPending }: Readonly<Props>) {
   const [phone, setPhone] = useState(athlete?.phone || '');
   const [reservas, setReservas] = useState<ReservaItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -588,7 +588,7 @@ const EMOJI = {
 };
 
 
-function ReceiptModal({ reserva, onClose }: { reserva: ReservaItem; onClose: () => void }) {
+function ReceiptModal({ reserva, onClose }: Readonly<{ reserva: ReservaItem; onClose: () => void }>) {
   const handlePrint = () => {
     window.print();
   };

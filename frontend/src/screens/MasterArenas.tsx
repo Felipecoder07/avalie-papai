@@ -7,7 +7,7 @@ interface Props { onNavigate: (id: string) => void; }
 
 const PAGE_SIZE = 8;
 
-export function MasterArenas({ onNavigate }: Props) {
+export function MasterArenas({ onNavigate }: Readonly<Props>) {
   const [arenas, setArenas] = useState<any[]>([]);
   const [planosSaaS, setPlanosSaaS] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

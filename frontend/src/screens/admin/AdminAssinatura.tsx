@@ -111,7 +111,7 @@ interface PlanoCardModalProps {
   onSolicitarUpgrade: (planoId: number, ciclo: 'mensal' | 'anual') => void;
 }
 
-function PlanoCardModal({ plano: p, dados, cicloSelecionado, solicitandoUpgradeId, onSolicitarUpgrade }: PlanoCardModalProps) {
+function PlanoCardModal({ plano: p, dados, cicloSelecionado, solicitandoUpgradeId, onSolicitarUpgrade }: Readonly<PlanoCardModalProps>) {
   const isPlanoAtual = dados?.plano.id === p.id;
   const isPro = p.nome === 'Pro';
   const isEnterprise = p.nome === 'Enterprise';

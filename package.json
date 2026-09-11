@@ -8,8 +8,9 @@
     "dev:cliente": "npm run dev --prefix \"tela cliente\"",
     "dev": "concurrently -n \"backend,frontend,cliente\" -c \"blue,green,magenta\" \"npm:dev:backend\" \"npm:dev:frontend\" \"npm:dev:cliente\"",
     "test:backend": "npm run test --prefix backend",
+    "test:frontend": "npm run test --prefix frontend",
     "test:cliente": "npm run test --prefix \"tela cliente\"",
-    "test": "npm run test:backend && npm run test:cliente"
+    "test": "npm run test:backend && npm run test:cliente && npm run test:frontend"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

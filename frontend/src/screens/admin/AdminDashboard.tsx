@@ -73,7 +73,7 @@ interface DashboardMiniSlotProps {
   bloqueios: any[];
 }
 
-function DashboardMiniSlot({ quadra: q, horaStr, isPastHour, reservas, bloqueios }: DashboardMiniSlotProps) {
+function DashboardMiniSlot({ quadra: q, horaStr, isPastHour, reservas, bloqueios }: Readonly<DashboardMiniSlotProps>) {
   if (horaStr < q.hora_abertura || horaStr >= q.hora_fechamento) {
     return <div key={q.id} className="slot" style={{ background: 'transparent', border: 'none' }} />;
   }
@@ -205,8 +205,8 @@ export function AdminDashboard() {
       if (q.hora_abertura && q.hora_abertura < earliest) earliest = q.hora_abertura;
       if (q.hora_fechamento && q.hora_fechamento > latest) latest = q.hora_fechamento;
     });
-    const minHour = earliest !== '23:59' ? parseInt(earliest.split(':')[0], 10) : 8;
-    let maxHour = latest !== '00:00' ? parseInt(latest.split(':')[0], 10) : 22;
+    const minHour = earliest !== '23:59' ? Number.parseInt(earliest.split(':')[0], 10) : 8;
+    let maxHour = latest !== '00:00' ? Number.parseInt(latest.split(':')[0], 10) : 22;
 
     if (latest.endsWith(':00')) maxHour--;
 

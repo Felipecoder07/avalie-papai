@@ -238,7 +238,7 @@ const register = async (req, res) => {
   }
 };
 
-const crypto = require('crypto');
+const crypto = require("node:crypto");
 
 const forgotPassword = async (req, res) => {
   const { email } = req.body;

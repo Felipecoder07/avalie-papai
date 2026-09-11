@@ -10,10 +10,43 @@ interface MetricCardProps {
   icon?: ReactNode;
 }
 
-export function MetricCard({ label, value, sub, trend, accent = 'default', icon }: MetricCardProps) {
-  const TrendIcon = trend?.direction === 'up' ? TrendingUp : trend?.direction === 'down' ? TrendingDown : Minus;
-  const trendColor = trend?.direction === 'up' ? 'text-success' : trend?.direction === 'down' ? 'text-danger' : 'text-muted';
-  const accentBorder = accent === 'warning' ? 'border-l-warning' : accent === 'danger' ? 'border-l-danger' : accent === 'success' ? 'border-l-success' : 'border-l-charcoal/20';
+function getMetricCardAccentBorder(accent: string) {
+  if (accent === 'warning') {
+    return 'border-l-warning';
+  }
+  if (accent === 'danger') {
+    return 'border-l-danger';
+  }
+  if (accent === 'success') {
+    return 'border-l-success';
+  }
+  return 'border-l-charcoal/20';
+}
+
+function getMetricCardTrendColor(trend: { value: string; direction: 'up' | 'down' | 'flat' } | undefined) {
+  if (trend?.direction === 'up') {
+    return 'text-success';
+  }
+  if (trend?.direction === 'down') {
+    return 'text-danger';
+  }
+  return 'text-muted';
+}
+
+function getMetricCardTrendIcon(trend: { value: string; direction: 'up' | 'down' | 'flat' } | undefined) {
+  if (trend?.direction === 'up') {
+    return TrendingUp;
+  }
+  if (trend?.direction === 'down') {
+    return TrendingDown;
+  }
+  return Minus;
+}
+
+export function MetricCard({ label, value, sub, trend, accent = 'default', icon }: Readonly<MetricCardProps>) {
+  const TrendIcon = getMetricCardTrendIcon(trend);
+  const trendColor = getMetricCardTrendColor(trend);
+  const accentBorder = getMetricCardAccentBorder(accent);
 
   return (
     <div className={`bg-off-white border border-border-passive border-l-2 ${accentBorder} rounded-2xl p-5 shadow-card hover:shadow-card-hover transition-shadow`}>

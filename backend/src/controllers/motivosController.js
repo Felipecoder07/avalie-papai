@@ -49,7 +49,7 @@ const excluirMotivo = async (req, res) => {
   const ip = req.headers['x-forwarded-for'] || req.ip;
 
   try {
-    if (parseInt(id) < 0) {
+    if (Number.parseInt(id) < 0) {
       return res.status(403).json({ error: 'Não é possível excluir os motivos predefinidos do sistema.' });
     }
 

@@ -310,22 +310,22 @@ const relatorioHorariosPico = async (req, res) => {
     for (let h = 0; h < 24; h++) porHora[h] = 0;
 
     reservas.forEach(r => {
-      const hInicio = parseInt(r.hora_inicio.split(':')[0]);
-      const hFim = parseInt(r.hora_fim.split(':')[0]);
+      const hInicio = Number.parseInt(r.hora_inicio.split(':')[0]);
+      const hFim = Number.parseInt(r.hora_fim.split(':')[0]);
       for (let h = hInicio; h < hFim; h++) {
         porHora[h] = (porHora[h] || 0) + 1;
       }
     });
 
     const horasAtivas = Object.keys(porHora)
-      .map(h => ({ hora: parseInt(h), total: porHora[h] }))
+      .map(h => ({ hora: Number.parseInt(h), total: porHora[h] }))
       .filter(h => h.total > 0);
 
     const maxPico = Math.max(...horasAtivas.map(h => h.total), 1);
 
     const porDiaSemana = diasNomes.map((nome, idx) => ({
       dia: nome,
-      total: reservas.filter(r => parseInt(r.dia_semana) === idx).length
+      total: reservas.filter(r => Number.parseInt(r.dia_semana) === idx).length
     }));
 
     res.json({ porHora: horasAtivas, maxPico, porDiaSemana, totalReservas: reservas.length, periodo: { inicio, fim } });
@@ -339,7 +339,7 @@ const relatorioHorariosPico = async (req, res) => {
 const relatorioTopClientes = async (req, res) => {
   try {
     const { inicio, fim, quadra_id } = getPeriodo(req);
-    const limite = parseInt(req.query.limite) || 20;
+    const limite = Number.parseInt(req.query.limite) || 20;
 
     const clientes = await db.allAsync(`
       SELECT

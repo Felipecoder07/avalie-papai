@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getStoredUser } from '../../utils/session';
+import { safeStorage } from '../../utils/safeStorage';
 
 interface Reserva {
   id: number;
@@ -14,9 +16,8 @@ interface Reserva {
 
 export function PortalCliente() {
   const navigate = useNavigate();
-  const token = localStorage.getItem('courtmanager_token');
-  const userJson = localStorage.getItem('courtmanager_user');
-  const user = userJson ? JSON.parse(userJson) : null;
+  const token = safeStorage.getItem('courtmanager_token');
+  const user = getStoredUser();
 
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [loading, setLoading] = useState(true);

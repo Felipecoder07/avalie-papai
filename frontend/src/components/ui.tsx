@@ -11,7 +11,7 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg';
 }
 
-export function Modal({ open, onClose, title, description, children, footer, size = 'md' }: ModalProps) {
+export function Modal({ open, onClose, title, description, children, footer, size = 'md' }: Readonly<ModalProps>) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -68,7 +68,7 @@ interface ConfirmModalProps {
 
 export function ConfirmModal({
   open, onClose, onConfirm, title, message, confirmLabel = 'Confirmar', destructive, requirePassword,
-}: ConfirmModalProps) {
+}: Readonly<ConfirmModalProps>) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
@@ -121,7 +121,7 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: 'sm' | 'md';
 };
 
-export function Button({ variant = 'secondary', size = 'md', className = '', children, ...rest }: ButtonProps) {
+export function Button({ variant = 'secondary', size = 'md', className = '', children, ...rest }: Readonly<ButtonProps>) {
   const base = 'inline-flex items-center justify-center gap-1.5 font-medium rounded-lg transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed select-none';
   const sizes = size === 'sm' ? 'text-xs px-2.5 py-1.5' : 'text-sm px-3.5 py-2';
   const variants: Record<string, string> = {
@@ -138,7 +138,7 @@ export function Button({ variant = 'secondary', size = 'md', className = '', chi
   );
 }
 
-export function Badge({ status, children }: { status: 'ativa' | 'bloqueada' | 'trial' | 'pago' | 'pendente' | 'atrasado' | 'ativo' | 'desativado' | 'success' | 'warning' | 'danger' | 'neutral'; children: ReactNode }) {
+export function Badge({ status, children }: Readonly<{ status: 'ativa' | 'bloqueada' | 'trial' | 'pago' | 'pendente' | 'atrasado' | 'ativo' | 'desativado' | 'success' | 'warning' | 'danger' | 'neutral'; children: ReactNode }>) {
   const map: Record<string, string> = {
     ativa: 'bg-success-soft text-success border-success/20',
     ativo: 'bg-success-soft text-success border-success/20',
@@ -160,11 +160,11 @@ export function Badge({ status, children }: { status: 'ativa' | 'bloqueada' | 't
   );
 }
 
-export function Card({ className = '', children }: { className?: string; children: ReactNode }) {
+export function Card({ className = '', children }: Readonly<{ className?: string; children: ReactNode }>) {
   return <div className={`bg-off-white border border-border-passive rounded-2xl shadow-card ${className}`}>{children}</div>;
 }
 
-export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
+export function PageHeader({ title, description, actions }: Readonly<{ title: string; description?: string; actions?: ReactNode }>) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
       <div>
@@ -176,7 +176,7 @@ export function PageHeader({ title, description, actions }: { title: string; des
   );
 }
 
-export function EmptyState({ message }: { message: string }) {
+export function EmptyState({ message }: Readonly<{ message: string }>) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="w-10 h-10 rounded-full bg-cream-surface flex items-center justify-center mb-3 border border-border-passive">
@@ -187,7 +187,7 @@ export function EmptyState({ message }: { message: string }) {
   );
 }
 
-export function Pagination({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (p: number) => void }) {
+export function Pagination({ page, totalPages, onPage }: Readonly<{ page: number; totalPages: number; onPage: (p: number) => void }>) {
   if (totalPages <= 1) return null;
   return (
     <div className="flex items-center justify-between px-1 pt-3">
@@ -210,7 +210,7 @@ export function Pagination({ page, totalPages, onPage }: { page: number; totalPa
 }
 
 // Field components
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+export function Field({ label, children, hint }: Readonly<{ label: string; children: ReactNode; hint?: string }>) {
   return (
     <label className="block">
       <span className="block text-xs font-medium text-charcoal mb-1.5">{label}</span>

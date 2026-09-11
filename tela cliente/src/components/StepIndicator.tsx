@@ -7,7 +7,7 @@ interface Props {
 
 const labels = ['Quadra & Data', 'Horário', 'Seus dados', 'Pagamento'];
 
-export default function StepIndicator({ total, current }: Props) {
+export default function StepIndicator({ total, current }: Readonly<Props>) {
   useEffect(() => {}, []);
   return (
     <div className="px-4 pt-3 pb-2 bg-cream/80 backdrop-blur-sm sticky top-0 z-30">

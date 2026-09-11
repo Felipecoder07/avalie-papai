@@ -15,7 +15,7 @@ const blocks: { key: Slot['block']; label: string; Icon: typeof Sun }[] = [
   { key: 'noite', label: 'Noite', Icon: Moon },
 ];
 
-export default function SlotGrid({ slots, selectedSlotIds = [], onSelect, showPrice = true }: Props) {
+export default function SlotGrid({ slots, selectedSlotIds = [], onSelect, showPrice = true }: Readonly<Props>) {
   const freeCount = slots.filter((s) => s.status === 'free').length;
 
   return (

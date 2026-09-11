@@ -125,7 +125,7 @@ export default function PixModal({
   pixPayload,
   onClose,
   onCancelPending
-}: Props) {
+}: Readonly<Props>) {
   const [remaining, setRemaining] = useState(PIX_DURATION);
   const [copied, setCopied] = useState(false);
   const [status, setStatus] = useState<'pending' | 'confirmed'>('pending');
