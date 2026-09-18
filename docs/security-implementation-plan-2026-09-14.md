@@ -1,8 +1,26 @@
 # Plano de implementação de segurança — Arenix
 
-Data: 14/09/2026. Status: plano preparado; correções ainda não implementadas.
+Data do plano: 14/09/2026. Atualização de status: 17/09/2026. Status: implementação local parcial; publicação e homologação em produção não confirmadas.
 
 Base: [auditoria](security-review-2026-09-13.md) e [evidências locais](security-audit-evidence.json). O objetivo é eliminar as falhas demonstradas, tratar os riscos adicionais e estabelecer critérios verificáveis para publicação. Concluir este plano não equivale a garantir ausência absoluta de vulnerabilidades.
+
+Marcação: `[x]` indica implementação conferida no código local; `[ ]` indica item pendente, parcialmente implementado ou sem comprovação suficiente. Tarefas com vários requisitos permanecem abertas enquanto houver parte não concluída. Referência do código conferido: commit `a5d8963` (`feat(security): blindagem multitenant, sessoes httponly/csrf, ledger financeiro e mfa`). Apenas esta atualização documental está sem commit; nenhuma etapa inteira foi considerada encerrada.
+
+Validação disponível: `npm.cmd test -- tests/security_remediation.test.js`, executado em `backend` nesta conferência, passou com 12 testes, usando SQLite `:memory:` e as rotas de `app.js`. A suíte verifica autorização, revogação/CSRF, propriedade, liquidação concorrente, pagamento parcial, recuperação e rejeição de upload ativo. Não substitui os testes completos, E2E, cenários de produção ou homologação no provedor.
+
+## Evidências e pendências da atualização
+
+| Área | Evidência local e limite da conclusão |
+| --- | --- |
+| Rotas e permissões | `app.js`, `server.js`, `permissions.js`, `usuariosController.js` e rotas administrativas restringem perfis e centralizam a montagem da API. A política completa, o fluxo dedicado de troca de titular e a matriz integral de atores permanecem abertos. |
+| Google | `LoginScreen.tsx` envia ID token; `athleteAuthController.js` usa `verifyIdToken` e vincula pelo subject, exigindo senha para uma conta existente. O caminho antigo sem prova foi substituído; a interface informa indisponibilidade quando não configurado. Login real Google ainda requer homologação. |
+| Sessões e recuperação | `sessionService.js`, `recoveryService.js` e os clientes `apiFetch.ts` implementam cookies, CSRF, hashes, expiração e revogação. O snapshot de senha/perfil/tenant invalida sessões após mudanças. Topologia publicada e consolidação dos marcadores de interface ainda precisam de conclusão. |
+| Clientes e visitantes | `clientAccessService.js` e `securitySchema.js` criam vínculos explícitos e credenciais limitadas de visitante. A associação automática por e-mail continua em `membership` e na migração v2: a prova de identidade para vincular cadastros permanece pendente. |
+| Reservas | `bookingService.js` valida arena/quadra, horários, funcionamento, bloqueios e conflitos, inclusive em transação. Validação de esporte, unidade de preço e todos os requisitos de desconto ainda não têm encerramento comprovado. |
+| Financeiro | `paymentLedgerService.js`, `securitySchema.js` e `transactions.js` implementam crédito único, alocação e recálculo transacional. Intenções e estornos têm implementação parcial; conta/moeda, reconciliação periódica, falhas e eventos fora de ordem ainda exigem validação/conclusão. Os testes concorrentes executados chamam a liquidação diretamente, não o webhook HTTP completo. |
+| Arquivos e navegador | `arenasController.js` recodifica imagens com `sharp`; `app.js` restringe arquivos servidos e aplica `helmet`. Foi adotada a proteção provisória de mídia na mesma origem. CSP, limites e configuração têm código, mas os requisitos completos e a infraestrutura ainda precisam de validação. |
+| QR Pix | O backend gera QR localmente, mas `AdminAssinatura.tsx` ainda tem fallback para `api.qrserver.com`; a tarefa permanece aberta. |
+| Migração e entrega | `securitySchema.js` ainda contém tratamento por ID fixo e associação por e-mail na migração v2. Auditoria de dependências, conciliação histórica, backup/restauração, homologação e publicação não foram comprovados. |
 
 ## Ordem e entregas
 
@@ -22,12 +40,12 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 ## 0. Preparar uma base de validação confiável
 
 - [ ] Preservar o working tree existente e registrar a revisão exata avaliada; separar os commits da remediação das alterações já presentes.
-- [ ] Centralizar todas as rotas em `app.js` ou em um registrador único usado pelo app. `server.js` deve inicializar infraestrutura/jobs e escutar a porta, sem registrar outra versão das rotas.
+- [x] Centralizar todas as rotas em `app.js` ou em um registrador único usado pelo app. `server.js` deve inicializar infraestrutura/jobs e escutar a porta, sem registrar outra versão das rotas.
 - [ ] Transformar as reproduções da auditoria em testes de regressão com expectativas seguras: rejeição de ações indevidas, ausência de dados sensíveis e conferência das alterações no banco.
-- [ ] Manter as evidências originais como histórico. O script de auditoria atual registra vulnerabilidades; sua execução sem erro não será critério de aprovação.
+- [x] Manter as evidências originais como histórico. O script de auditoria atual registra vulnerabilidades; sua execução sem erro não será critério de aprovação.
 - [ ] Usar banco isolado por suíte; concorrência com SQLite real. Nunca executar fixtures de auditoria no banco de produção.
 - [ ] Criar matriz de atores: anônimo, Cliente proprietário, Cliente terceiro, Recepcionista, Gerente, Administrador e SuperAdmin; arena A e B; conta ativa, bloqueada e excluída.
-- [ ] Incluir login real nas suítes de autorização, evitando depender exclusivamente de JWTs fabricados pelos testes.
+- [x] Incluir login real nas suítes de autorização, evitando depender exclusivamente de JWTs fabricados pelos testes.
 
 **Arquivos:** `backend/src/app.js`, `backend/src/server.js`, `backend/tests/security_concurrency.test.js`, `backend/tests/gateway.test.js` e novas suítes de autorização, identidade e pagamentos.
 
@@ -38,22 +56,22 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 ### Perfis e permissões
 
 - [ ] Criar política central de permissões, negando ações não previstas.
-- [ ] Impedir atribuição de `SuperAdmin` por qualquer endpoint de tenant, tanto na criação quanto na edição de usuários.
+- [x] Impedir atribuição de `SuperAdmin` por qualquer endpoint de tenant, tanto na criação quanto na edição de usuários.
 - [ ] Proibir autopromoção. Administrador pode gerenciar Gerente e Recepcionista da própria arena; Gerente pode gerenciar apenas Recepcionista. Mudança de titular/Administrador fica em fluxo dedicado, com reautenticação e auditoria.
-- [ ] Impedir modificar e-mail/senha/perfil de conta de hierarquia superior por uma rota menos protegida.
-- [ ] Usar os perfis efetivamente suportados pelo esquema; remover permissões residuais para nomes de perfil inexistentes.
-- [ ] Restringir CRUD administrativo de clientes, grade identificada e criação de reservas de balcão à equipe permitida.
-- [ ] Restringir lançamento manual a Administrador, Gerente e Recepcionista; descontos a Administrador/Gerente, com limite do Gerente; estorno a Administrador. Não permitir atribuição de métodos online confirmados pelo lançamento manual.
+- [x] Impedir modificar e-mail/senha/perfil de conta de hierarquia superior por uma rota menos protegida.
+- [x] Usar os perfis efetivamente suportados pelo esquema; remover permissões residuais para nomes de perfil inexistentes.
+- [x] Restringir CRUD administrativo de clientes, grade identificada e criação de reservas de balcão à equipe permitida.
+- [x] Restringir lançamento manual a Administrador, Gerente e Recepcionista; descontos a Administrador/Gerente, com limite do Gerente; estorno a Administrador. Não permitir atribuição de métodos online confirmados pelo lançamento manual.
 - [ ] Clientes acessam somente operações de atleta e objetos comprovadamente vinculados à sua conta. SuperAdmin usa rotas master explícitas, sem bypass genérico em helpers de reservas.
 
 ### Dados e credenciais
 
 - [ ] Retirar token master, client secret, webhook secret, segredos de 2FA e tokens de recuperação de todas as respostas de leitura e logs.
-- [ ] Retornar indicadores como `has_master_token`, `has_client_secret` e `gateway_connected`; aceitar segredo apenas na operação de substituição.
+- [x] Retornar indicadores como `has_master_token`, `has_client_secret` e `gateway_connected`; aceitar segredo apenas na operação de substituição.
 - [ ] Preservar credencial anterior se uma atualização não trouxer nova credencial. Remoção exige ação explícita e reautenticação adequada.
-- [ ] Desativar o caminho Google que aceita identidade sem prova até concluir a etapa 2; indicar indisponibilidade desse método na interface e manter login por senha.
-- [ ] Remover de imediato o fallback público que revela histórico por telefone. Suspender cancelamento/recuperação de Pix sem prova de propriedade até o contrato seguro da etapa 3.
-- [ ] Bloquear simulação em produção em gateway, assinatura SaaS e serviços auxiliares para todos os perfis. Simulação de desenvolvimento exige habilitação explícita, em vez de ocorrer por falta de token ou `NODE_ENV`.
+- [x] Desativar o caminho Google que aceita identidade sem prova até concluir a etapa 2; indicar indisponibilidade desse método na interface e manter login por senha.
+- [x] Remover de imediato o fallback público que revela histórico por telefone. Suspender cancelamento/recuperação de Pix sem prova de propriedade até o contrato seguro da etapa 3.
+- [x] Bloquear simulação em produção em gateway, assinatura SaaS e serviços auxiliares para todos os perfis. Simulação de desenvolvimento exige habilitação explícita, em vez de ocorrer por falta de token ou `NODE_ENV`.
 
 **Arquivos:** `usuariosRoutes.js`, `usuariosController.js`, `clientesRoutes.js`, `pagamentosRoutes.js`, `pagamentosController.js`, `reservasRoutes.js`, `gatewayAuthorization.js`, `saasController.js`, `publicController.js`, `tenantAssinaturaRoutes.js`, `saasBillingService.js`; telas de configurações e gestão nas duas interfaces.
 
@@ -63,19 +81,19 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 
 ### Google
 
-- [ ] Trocar o fluxo em `tela cliente/src/components/LoginScreen.tsx`: atualmente consulta userinfo no navegador e envia apenas e-mail/nome. Passar a obter um ID token pelo fluxo de identidade Google e enviá-lo ao backend.
-- [ ] Validar no servidor assinatura, emissor, audiência configurada, expiração e requisitos de e-mail verificado. Usar biblioteca mantida do provedor, com configuração explícita.
-- [ ] Vincular identidade por `(provedor, subject)` e usuário interno. E-mail não será, sozinho, autorização para vincular conta existente; exigir autenticação existente ou procedimento de recuperação/vinculação verificado.
+- [x] Trocar o fluxo em `tela cliente/src/components/LoginScreen.tsx`: atualmente consulta userinfo no navegador e envia apenas e-mail/nome. Passar a obter um ID token pelo fluxo de identidade Google e enviá-lo ao backend.
+- [x] Validar no servidor assinatura, emissor, audiência configurada, expiração e requisitos de e-mail verificado. Usar biblioteca mantida do provedor, com configuração explícita.
+- [x] Vincular identidade por `(provedor, subject)` e usuário interno. E-mail não será, sozinho, autorização para vincular conta existente; exigir autenticação existente ou procedimento de recuperação/vinculação verificado.
 - [ ] Remover credenciais fictícias e fallback por e-mail dos fluxos publicados. Simuladores ficam restritos aos testes.
 - [ ] Inventariar o uso real de Supabase nas interfaces. Se houver fluxo de identidade Supabase necessário, criar um validador separado para seu emissor e audiência; nunca aceitar tokens de emissores diferentes pelo mesmo decoder permissivo.
 
 ### Sessões
 
-- [ ] Extrair autenticação para serviço/middleware único, utilizado também por todas as funções públicas que hoje fazem `jwt.verify` diretamente.
-- [ ] Criar sessão de servidor com identificador aleatório, expiração numérica UTC, revogação, usuário e versão de autenticação. Guardar hash da credencial, não seu valor reutilizável.
-- [ ] Validar usuário ativo, sessão vigente e permissões atuais em cada requisição; falha de consulta ao banco deve negar acesso, sem continuar silenciosamente.
-- [ ] Logout revoga a sessão atual. Redefinição de senha, bloqueio e mudança de perfil revogam as sessões afetadas; exclusão desabilita todas.
-- [ ] Eliminar credenciais duradouras do `localStorage`. Contrato final recomendado para as SPAs: cookie de sessão `HttpOnly`, `Secure`, host-only e `SameSite=Lax`, com proteção CSRF nas escritas e validação de origem.
+- [x] Extrair autenticação para serviço/middleware único, utilizado também por todas as funções públicas que hoje fazem `jwt.verify` diretamente.
+- [x] Criar sessão de servidor com identificador aleatório, expiração numérica UTC, revogação, usuário e versão de autenticação. Guardar hash da credencial, não seu valor reutilizável.
+- [x] Validar usuário ativo, sessão vigente e permissões atuais em cada requisição; falha de consulta ao banco deve negar acesso, sem continuar silenciosamente.
+- [x] Logout revoga a sessão atual. Redefinição de senha, bloqueio e mudança de perfil revogam as sessões afetadas; exclusão desabilita todas.
+- [x] Eliminar credenciais duradouras do `localStorage`. Contrato final recomendado para as SPAs: cookie de sessão `HttpOnly`, `Secure`, host-only e `SameSite=Lax`, com proteção CSRF nas escritas e validação de origem.
 - [ ] Usar proxy para manter API e interface sob o mesmo site na produção. Confirmar a topologia de cada portal antes do rollout; se sites distintos forem indispensáveis, definir solução de sessão/proxy específica e testar o comportamento dos navegadores, sem liberar CORS/cookies indiscriminadamente.
 - [ ] Durante a transição, primeiro introduzir revogação efetiva para as credenciais novas; depois publicar clientes com cookies e retirar o suporte a bearer legado. Revogar todas as credenciais antigas na mudança, exigindo novo login.
 - [ ] Centralizar chamadas HTTP nas duas interfaces (`credentials`, CSRF, erro 401/403 e logout) e remover os múltiplos nomes de token armazenado.
@@ -84,8 +102,8 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 
 - [ ] Unificar mudança de senha para equipe, master e atleta. Exigir senha atual ou reautenticação verificada; operações master também exigem o segundo fator configurado. Rota de perfil de atleta deve rejeitar conta de gestão.
 - [ ] Remover senhas fixas de criação/reset. Criar convite aleatório, de uso único e validade curta, com conta indisponível até ativação.
-- [ ] Armazenar recuperação por hash, finalidade, usuário, expiração UTC numérica, contador de tentativas e consumo atômico. Invalidar pedidos anteriores ao emitir novo pedido.
-- [ ] Trocar geração de códigos baseada em aleatoriedade inadequada por gerador criptográfico, se presente; limitar tentativas por desafio e por conta.
+- [x] Armazenar recuperação por hash, finalidade, usuário, expiração UTC numérica, contador de tentativas e consumo atômico. Invalidar pedidos anteriores ao emitir novo pedido.
+- [x] Trocar geração de códigos baseada em aleatoriedade inadequada por gerador criptográfico, se presente; limitar tentativas por desafio e por conta.
 - [ ] Aplicar política consistente de senha e limites compatíveis com o algoritmo de hash, inclusive o limite em bytes do bcrypt, evitando truncamento silencioso.
 - [ ] Remover segredo TOTP compartilhado e migração que o atribui automaticamente. Provisionar segredo individual, confirmação do cadastro e recuperação segura; contas com segredo padrão precisam de novo provisionamento.
 - [ ] Usar respostas genéricas na recuperação para não revelar se o e-mail existe. Logs não devem conter código/token.
@@ -98,8 +116,8 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 
 ### Vínculo entre conta, arena e cliente
 
-- [ ] Modelar explicitamente vínculo entre `usuario_id`, `tenant_id` e `cliente_id`; manter conta universal com cadastros separados por arena.
-- [ ] Filtrar todas as buscas de cadastro por arena. Retirar busca global por e-mail/CPF dos helpers de checkout e recuperação de colisão.
+- [x] Modelar explicitamente vínculo entre `usuario_id`, `tenant_id` e `cliente_id`; manter conta universal com cadastros separados por arena.
+- [x] Filtrar todas as buscas de cadastro por arena. Retirar busca global por e-mail/CPF dos helpers de checkout e recuperação de colisão.
 - [ ] Não inferir vínculo pela coincidência entre `Usuarios.id` e `Clientes.id`, telefone informado ou e-mail não verificado.
 - [ ] Contatos fornecidos no checkout anônimo pertencem àquela reserva; não sobrescrevem cadastro de terceiro. Associação posterior à conta exige prova verificada.
 - [ ] Revisar consultas de perfil, minhas reservas, Pix, status, cancelamento, exclusão de conta, recibos e grade usando a mesma política de propriedade.
@@ -108,9 +126,9 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 
 ### Checkout sem login
 
-- [ ] Preservar checkout de visitante mediante um segredo aleatório específico da reserva/grupo, emitido na criação e armazenado no servidor por hash.
-- [ ] Limitar o segredo ao tenant, objeto, ações e expiração; transmitir por cookie restrito ou cabeçalho, sem query string, logs, ferramentas de analytics ou URL de QR externo.
-- [ ] O segredo permite consultar apenas aquela compra, recuperar sua cobrança e desistir enquanto permitido; não concede histórico, alteração de cadastro, exclusão de conta ou acesso financeiro administrativo.
+- [x] Preservar checkout de visitante mediante um segredo aleatório específico da reserva/grupo, emitido na criação e armazenado no servidor por hash.
+- [x] Limitar o segredo ao tenant, objeto, ações e expiração; transmitir por cookie restrito ou cabeçalho, sem query string, logs, ferramentas de analytics ou URL de QR externo.
+- [x] O segredo permite consultar apenas aquela compra, recuperar sua cobrança e desistir enquanto permitido; não concede histórico, alteração de cadastro, exclusão de conta ou acesso financeiro administrativo.
 - [ ] Recuperação de reserva fora dessa sessão exige login/vinculação ou verificação de posse do contato. Conhecer telefone e ID não basta.
 - [ ] Desistência deve verificar saldo, estado de cobrança e possíveis pagamentos em processamento. Resolver a corrida com aprovação tardia por reconciliação/reembolso, sem disponibilizar silenciosamente uma reserva já paga.
 
@@ -132,7 +150,7 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 - [ ] Definir valores monetários em centavos inteiros e validar finitude, sinal, limites e moeda. Rejeitar `NaN`, infinito, textos parciais e valores com precisão indevida.
 - [ ] Criar intenção de cobrança contendo tenant, reserva/grupo, valor esperado, moeda, conta recebedora, chave de idempotência e estado.
 - [ ] Associar pagamento ao identificador do provedor com unicidade no escopo correto de provedor/conta; eventos de pagamento, reembolso e disputa têm identidades e estados próprios.
-- [ ] Modelar alocação do pagamento às reservas do grupo. A soma alocada não excede o crédito real; uma reserva só fica paga quando sua obrigação estiver coberta.
+- [x] Modelar alocação do pagamento às reservas do grupo. A soma alocada não excede o crédito real; uma reserva só fica paga quando sua obrigação estiver coberta.
 
 ### Criação e repetição
 
@@ -145,14 +163,14 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 
 - [ ] Validar autenticidade conforme o contrato vigente do Mercado Pago para cada tipo de integração, com configuração obrigatória em produção. Verificar conta/evento/valor/moeda e correspondência com a intenção consultando o provedor.
 - [ ] Não confiar em `approved` ou valores recebidos do cliente. Rejeitar referências desconhecidas sem iniciar trabalho ilimitado.
-- [ ] Executar mudança de estado, criação do lançamento, alocação e saldo em uma transação com aquisição atômica e restrição única. Inserção duplicada conhecida é tratada como evento já processado.
-- [ ] Em SQLite, garantir que operações de outras requisições não entrem acidentalmente na mesma transação da conexão compartilhada: usar executor que possua a conexão durante a unidade de trabalho ou conexão dedicada. Um mutex apenas no processo não substitui unicidade e transação no banco.
+- [x] Executar mudança de estado, criação do lançamento, alocação e saldo em uma transação com aquisição atômica e restrição única. Inserção duplicada conhecida é tratada como evento já processado.
+- [x] Em SQLite, garantir que operações de outras requisições não entrem acidentalmente na mesma transação da conexão compartilhada: usar executor que possua a conexão durante a unidade de trabalho ou conexão dedicada. Um mutex apenas no processo não substitui unicidade e transação no banco.
 - [ ] Implementar rollback e recuperação de falha após cada ponto de escrita. E-mails/auditoria externa são disparados após commit, por fila/outbox com deduplicação.
 - [ ] Persistir evento validado antes de confirmar recebimento, ou responder conforme a política de retry documentada do provedor. Não responder sucesso a falha transitória sem mecanismo de recuperação.
 
 ### Grupos, cancelamento, estorno e SaaS
 
-- [ ] Remover o UPDATE que marca todo grupo como Pago após qualquer crédito. Recalcular cada reserva pela sua alocação e o grupo pela soma das obrigações.
+- [x] Remover o UPDATE que marca todo grupo como Pago após qualquer crédito. Recalcular cada reserva pela sua alocação e o grupo pela soma das obrigações.
 - [ ] Preservar a política de sinal/pagamento parcial, caso exista, diferenciando autorização para confirmar a reserva de quitação financeira.
 - [ ] Diferenciar lançamento manual de estorno e devolução de pagamento online. Online só é exibido como reembolsado após confirmação do provedor; enquanto isso, estado pendente com retry/reconciliação.
 - [ ] Impedir estorno acima do saldo realmente recebido e ainda estornável, inclusive em duas requisições simultâneas. Persistir chave idempotente da devolução.
@@ -166,9 +184,9 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 
 ## 5. Proteger arquivos, navegador e recursos do servidor
 
-- [ ] Upload com lista fechada de formatos raster, verificação dos bytes, limite de tamanho/dimensões e recodificação. Gerar extensão e nome no servidor. Rejeitar HTML/SVG ativo e formato declarado que não corresponde ao conteúdo.
+- [x] Upload com lista fechada de formatos raster, verificação dos bytes, limite de tamanho/dimensões e recodificação. Gerar extensão e nome no servidor. Rejeitar HTML/SVG ativo e formato declarado que não corresponde ao conteúdo.
 - [ ] Inventariar uploads antigos e colocar arquivos incompatíveis em quarentena antes de bloquear os formatos; preservar associação das capas válidas.
-- [ ] Servir mídia em origem sem sessão, com tipo correto, `nosniff` e política restritiva; impedir execução de conteúdo ativo. Enquanto origem separada não estiver pronta, aplicar os mesmos bloqueios no servidor de arquivos.
+- [x] Servir mídia em origem sem sessão, com tipo correto, `nosniff` e política restritiva; impedir execução de conteúdo ativo. Enquanto origem separada não estiver pronta, aplicar os mesmos bloqueios no servidor de arquivos.
 - [ ] Aplicar CSP e proteção de enquadramento adequadas às integrações necessárias; usar nonce/hash quando necessário. Homologar Google e pagamentos para evitar liberação ampla de scripts.
 - [ ] Remover segredos do frontend e do armazenamento JavaScript; evitar interpolação de dados não escapados em HTML de e-mails/recibos. Revisar URLs, protocolo e destinos de links fornecidos por usuário.
 - [ ] Gerar QR Pix localmente em biblioteca/código controlado, evitando enviar payload financeiro a um serviço externo de QR desnecessário.
@@ -227,7 +245,7 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 - [ ] Monitorar promoção de perfis, leitura/alteração de integração, falhas de identidade, acesso negado, duplicação de eventos, saldos e reembolsos pendentes, sem registrar PII/credenciais desnecessárias.
 - [ ] Plano de contingência: interromper escritas afetadas, manter captura/retry de notificações e corrigir adiante. Restaurar snapshot financeiro antigo só após conciliar eventos novos; nunca fazer rollback que reabra endpoints vulneráveis ou apague transferências posteriores.
 
-**Ações externas:** publicação, mudanças no proxy/contas do provedor e rotação real serão entregas operacionais concretas. Nesta solicitação está sendo preparado o plano; essas ações não foram executadas nem são pré-condição para produzir o código e a validação local.
+**Ações externas:** publicação, mudanças no proxy/contas do provedor e rotação real continuam como entregas operacionais pendentes de comprovação. Esta atualização registra o código e a validação local; não confirma execução dessas ações.
 
 ## Matriz de cobertura da auditoria
 
