@@ -8,6 +8,7 @@ router.post('/webhook-pagamento', saasController.handleSaaSWebhook);
 
 router.use(verifyToken);
 router.use(verifySuperAdmin);
+router.use(require('../middlewares/mfa').requireMasterMfa);
 
 router.get('/arenas', saasController.getArenas);
 router.post('/arenas', saasController.createArena);

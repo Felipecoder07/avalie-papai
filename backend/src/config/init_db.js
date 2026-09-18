@@ -62,9 +62,7 @@ const initDb = () => {
     `);
 
     // Migração automática e atualização de 2FA
-    db.run("ALTER TABLE Usuarios ADD COLUMN two_factor_secret TEXT", (err) => {
-      db.run("UPDATE Usuarios SET two_factor_secret = 'JBSWY3DPEHPK3PXP' WHERE perfil = 'SuperAdmin' AND two_factor_secret IS NULL");
-    });
+    db.run("ALTER TABLE Usuarios ADD COLUMN two_factor_secret TEXT", () => {});
 
     // Migrações para recuperação de senha
     db.run("ALTER TABLE Usuarios ADD COLUMN reset_password_token TEXT", (err) => {});
@@ -404,35 +402,6 @@ const initDb = () => {
       )
     `);
 
-    // Migração de coerência financeira: atualiza faturas legadas antigas de teste para os valores reais dos planos
-    db.run("UPDATE FaturasSaaS SET valor = 49.99 WHERE plano_id = 1 AND valor = 99.9", () => {});
-    db.run("UPDATE FaturasSaaS SET valor = 79.99 WHERE plano_id = 2 AND valor = 99.9", () => {});
-    
-    // Migração de coerência de pagamentos: garante que reservas legadas com status 'Pago' tenham seu registro em Pagamentos com a data correta da reserva
-    db.all("SELECT id, valor_total, COALESCE(criado_em, data_reserva || ' 12:00:00') as data_reg FROM Reservas WHERE status_pagamento = 'Pago' AND status != 'Cancelada' AND id NOT IN (SELECT DISTINCT reserva_id FROM Pagamentos)", (err, rows) => {
-      if (rows && rows.length > 0) {
-        rows.forEach(r => {
-          db.run("INSERT INTO Pagamentos (reserva_id, valor, metodo, registrado_por, registrado_em) VALUES (?, ?, 'Pix', 1, ?)", [r.id, r.valor_total, r.data_reg]);
-        });
-      }
-    });
-
-    // Correção de datas para registros de pagamentos migrados retroativamente
-    db.run(`
-      UPDATE Pagamentos 
-      SET registrado_em = (SELECT COALESCE(r.criado_em, r.data_reserva || ' 12:00:00') FROM Reservas r WHERE r.id = Pagamentos.reserva_id)
-      WHERE id IN (
-        SELECT p.id FROM Pagamentos p 
-        JOIN Reservas r ON p.reserva_id = r.id 
-        WHERE DATE(p.registrado_em) != r.data_reserva 
-          AND r.data_reserva < DATE('now')
-          AND p.registrado_em >= DATE('now')
-      )
-    `, () => {});
-
-    // Alinhamento de coerência para testes legados com Pix de 2 centavos
-    db.run("UPDATE Reservas SET valor_total = 0.02 WHERE id IN (79, 85) AND valor_total = 0.01", () => {});
-    
     console.log('Tabelas base criadas com sucesso!');
   });
 };

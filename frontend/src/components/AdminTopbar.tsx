@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Menu, Bell, ChevronRight, X, Globe, Copy, ExternalLink, Share2, Check } from 'lucide-react';
 import { useLocation } from 'react-router-dom';

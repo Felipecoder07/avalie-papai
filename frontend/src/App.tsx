@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from './utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { MasterLayout } from './layouts/MasterLayout';
@@ -220,6 +221,7 @@ function App() {
       <Route path="/cadastro" element={<Checkout />} />
       <Route path="/master-login" element={<MasterLogin />} />
       <Route path="/esqueci-senha" element={<ForgotPassword />} />
+      <Route path="/redefinir-senha" element={<ResetPassword />} />
       {/* Rotas Públicas sem necessidade de Login (Link Único da Arena) */}
       <Route path="/arena/:slug" element={<PublicTenantView />} />
       <Route path="/v/:slug" element={<PublicTenantView />} />

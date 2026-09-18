@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect, useRef } from 'react';
 import { User, Phone, Lock, Eye, EyeOff, Loader2, AlertCircle, CheckCircle, X, Shield, CreditCard, Trash2, KeyRound, Camera, BadgeCheck, LogOut } from 'lucide-react';
 import { maskPhone, maskCPF } from '../lib/format';

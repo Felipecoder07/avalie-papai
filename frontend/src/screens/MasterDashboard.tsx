@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Building2, LayoutGrid, CalendarDays, Users, Wallet, TrendingDown, AlertTriangle, ArrowRight } from 'lucide-react';
 import { MetricCard } from '../components/MetricCard';

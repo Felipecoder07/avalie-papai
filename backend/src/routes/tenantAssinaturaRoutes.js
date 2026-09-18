@@ -1,3 +1,4 @@
+const { simulationAllowed } = require('../utils/security');
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
@@ -222,7 +223,7 @@ router.post('/faturas/:id/gerar-pix', async (req, res) => {
 // Simula a liquidação imediata da fatura para fins de teste/demonstração.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/faturas/:id/simular-pagamento', async (req, res) => {
-  if (process.env.NODE_ENV === 'production' && req.user.perfil !== 'SuperAdmin') {
+  if (!simulationAllowed()) {
     return res.status(403).json({ error: 'A simulação de pagamentos está desabilitada em ambiente de produção.' });
   }
 

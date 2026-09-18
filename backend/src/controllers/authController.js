@@ -1,107 +1,36 @@
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'secret-jwt-courtmanager-2026';
-const JWT_EXPIRES_IN = '8h'; // RNF-005
-
-const login = (req, res) => {
-  const { email, senha } = req.body;
-  const ip = req.headers['x-forwarded-for'] || req.ip;
-  const userAgent = req.headers['user-agent'] || 'Desconhecido';
-
-  if (!email || !senha) {
-    return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
-  }
-
-  db.get(
-    `SELECT u.*, a.nome as arena_nome, a.slug as arena_slug, a.status as arena_status
-     FROM Usuarios u 
-     LEFT JOIN Arenas a ON u.tenant_id = a.id 
-     WHERE u.email = ?`, 
-    [email], 
-    async (err, user) => {
-    if (err) {
-      return res.status(500).json({ error: 'Erro interno do servidor.' });
+const { issueSession, logout: endSession } = require('../services/sessionService');
+const { passwordError, frontendUrl, secret } = require('../utils/security');
+const { createChallenge, resetWithChallenge } = require('../services/recoveryService');
+const login = async (req,res) => {
+  try {
+    const {email,senha}=req.body;
+    if(typeof email!=='string'||typeof senha!=='string'||email.length>254||senha.length>200) return res.status(400).json({error:'Credenciais invalidas.'});
+    const user=await db.getAsync('SELECT u.*,a.nome AS arena_nome,a.slug AS arena_slug,a.status AS arena_status FROM Usuarios u LEFT JOIN Arenas a ON a.id=u.tenant_id WHERE LOWER(u.email)=?',[email.trim().toLowerCase()]);
+    if(!user||!await bcrypt.compare(senha,user.senha_hash)) return res.status(401).json({error:'E-mail ou senha invalidos.'});
+    if(user.ativo===0||user.arena_status===-1) return res.status(403).json({error:'Conta indisponivel.'});
+    if(user.perfil==='SuperAdmin' && typeof req.body.recovery_code==='string') {
+      await require('../config/securitySchema').ensureSecuritySchema(db);
+      await db.transaction(async()=>{
+        const consumed=await db.runAsync('UPDATE MfaRecovery SET used=1 WHERE usuario_id=? AND code_hash=? AND used=0',[user.id,require('../utils/security').hash(req.body.recovery_code)]);
+        if(consumed.changes!==1) throw require('../utils/security').httpError(403,'Codigo de recuperacao invalido.');
+        await db.runAsync('UPDATE Usuarios SET two_factor_secret=NULL WHERE id=?',[user.id]);
+        await db.runAsync('DELETE FROM MfaRecovery WHERE usuario_id=?',[user.id]);
+        await require('../services/sessionService').revokeUser(user.id);
+      });
+      user.two_factor_secret=null;
     }
-
-    if (!user) {
-      logAuditEvent(null, 'Tentativa de login falha', `E-mail tentado: ${email}, Motivo: Usuário inexistente`, ip);
-      return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
-    }
-
-    const senhaValida = await bcrypt.compare(senha, user.senha_hash);
-
-    if (!senhaValida) {
-      logAuditEvent(user.id, 'Tentativa de login falha', `E-mail tentado: ${email}, Motivo: Senha inválida`, ip);
-      return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
-    }
-
-    // Se o usuário está desativado (ativo = 0) ou a arena está excluída (status = -1), bloqueia o login
-    if (user.perfil !== 'SuperAdmin' && (user.ativo === 0 || user.arena_status === -1)) {
-      logAuditEvent(user.id, 'Tentativa de login falha', `Motivo: Conta desativada ou arena excluída`, ip);
-      return res.status(403).json({ error: 'Esta conta foi desativada ou a arena foi removida da plataforma.' });
-    }
-
-    // Se a arena está suspensa por inadimplência (status = 0):
-    // Apenas o Administrador (dono da arena) pode logar para acessar a aba Assinatura e efetuar o pagamento Pix
-    if (user.perfil !== 'SuperAdmin' && user.arena_status === 0 && user.perfil !== 'Administrador') {
-      logAuditEvent(user.id, 'Tentativa de login falha', `Motivo: Arena suspensa por inadimplência (Perfil ${user.perfil})`, ip);
-      return res.status(403).json({ error: 'A arena está suspensa por pendência financeira. O administrador da arena deve acessar para efetuar o pagamento.' });
-    }
-
-    // Login bem-sucedido
-    const payload = {
-      id: user.id,
-      tenant_id: user.tenant_id,
-      perfil: user.perfil,
-      cliente_id: user.cliente_id
-    };
-
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-
-    logAuditEvent(user.id, 'Login bem-sucedido', `User-Agent: ${userAgent}`, ip);
-
-    // Registra a sessão ativa no banco em background
-    db.runAsync(`
-      INSERT INTO SessoesAtivas (usuario_id, tenant_id, token, ip, user_agent) 
-      VALUES (?, ?, ?, ?, ?)
-    `, [user.id, user.tenant_id, token, ip, userAgent]).catch(err => console.error('Erro ao registrar sessao ativa:', err));
-
-    res.json({
-      token,
-      usuario: {
-        id: user.id,
-        nome: user.nome,
-        email: user.email,
-        perfil: user.perfil,
-        arena_nome: user.arena_nome,
-        arena_slug: user.arena_slug,
-        arena_status: user.arena_status
-      }
-    });
-  });
+    if(user.perfil==='SuperAdmin' && user.two_factor_secret && require('../utils/security').decrypt(user.two_factor_secret)!=='JBSWY3DPEHPK3PXP' && !require('../utils/totp').verify(user.two_factor_secret,req.body.codigo_2fa)) return res.status(403).json({error:'Segundo fator obrigatorio.',requires_2fa:true});
+    const token=await issueSession(user,req,res);
+    if(user.perfil==='Cliente'&&user.tenant_id) await require('../services/clientAccessService').membership(user,user.tenant_id,true);
+    logAuditEvent(user.id,'Login', 'Sessao iniciada',req.ip);
+    res.json({token,requires_mfa_setup:user.perfil==='SuperAdmin'&&(!user.two_factor_secret||require('../utils/security').decrypt(user.two_factor_secret)==='JBSWY3DPEHPK3PXP'),usuario:{id:user.id,nome:user.nome,email:user.email,perfil:user.perfil,cliente_id:user.cliente_id,tenant_id:user.tenant_id,arena_nome:user.arena_nome,arena_slug:user.arena_slug,arena_status:user.arena_status}});
+  } catch(e){ res.status(e.status||500).json({error:e.status?e.message:'Erro ao iniciar sessao.'}); }
 };
-
-const logout = async (req, res) => {
-  const ip = req.headers['x-forwarded-for'] || req.ip;
-  const usuario_id = req.user ? req.user.id : null;
-  const authHeader = req.headers['authorization'];
-  
-  if (authHeader) {
-    const token = authHeader.split(' ')[1];
-    if (token) {
-      await db.runAsync('DELETE FROM SessoesAtivas WHERE token = ?', [token]).catch(err => console.error('Erro ao remover sessao no logout:', err));
-    }
-  }
-  
-  if (usuario_id) {
-    logAuditEvent(usuario_id, 'Logout', 'Logout manual', ip);
-  }
-  
-  res.json({ message: 'Logout registrado com sucesso.' });
-};
+const logout=async(req,res)=>{ await endSession(req,res); res.json({message:'Sessao encerrada.'}); };
 
 async function resolvePlanoId(planoReq) {
   if (!planoReq) return 1;
@@ -153,20 +82,9 @@ async function generateUniqueSlug(arenaNomeFinal) {
   return finalSlug;
 }
 
-async function handleRegisterCliente({ nome, email, senha_hash, perfil, ip, res }) {
-  db.run('INSERT INTO Clientes (nome, email) VALUES (?, ?)', [nome, email], function(err) {
-    if (err) {
-      if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'E-mail já cadastrado.' });
-      return res.status(500).json({ error: 'Erro ao cadastrar cliente.' });
-    }
-    const cliente_id = this.lastID;
-    db.run('INSERT INTO Usuarios (nome, email, senha_hash, perfil, cliente_id) VALUES (?, ?, ?, ?, ?)', 
-      [nome, email, senha_hash, perfil, cliente_id], function(errUser) {
-        if (errUser) return res.status(500).json({ error: 'Erro ao criar usuário.' });
-        logAuditEvent(this.lastID, 'Cadastro Cliente', `E-mail: ${email}`, ip);
-        res.status(201).json({ message: 'Cadastro realizado com sucesso!' });
-    });
-  });
+async function handleRegisterCliente({nome,email,senha_hash,res}) {
+  const result=await db.runAsync("INSERT INTO Usuarios(nome,email,senha_hash,perfil) VALUES(?,?,?,'Cliente')",[nome,email.trim().toLowerCase(),senha_hash]);
+  res.status(201).json({message:'Cadastro realizado.',id:result.lastID});
 }
 
 async function handleRegisterAdministrador({ req, res, nome, email, senha_hash, perfil, arena_nome, telefone, arena_cidade, ip }) {
@@ -226,6 +144,7 @@ const register = async (req, res) => {
     return res.status(400).json({ error: 'Perfil inválido para cadastro.' });
   }
 
+  if (passwordError(senha)) return res.status(400).json({error:passwordError(senha)});
   try {
     const senha_hash = await bcrypt.hash(senha, 12);
 
@@ -238,131 +157,28 @@ const register = async (req, res) => {
   }
 };
 
-const crypto = require("node:crypto");
-
-const forgotPassword = async (req, res) => {
-  const { email } = req.body;
-  const ip = req.headers['x-forwarded-for'] || req.ip;
-
-  if (!email) {
-    return res.status(400).json({ error: 'E-mail é obrigatório.' });
-  }
-
+const forgotPassword=async(req,res)=>{
   try {
-    const user = await db.getAsync('SELECT id, nome, email FROM Usuarios WHERE email = ?', [email.trim()]);
-    
-    // Proteção contra enumeração de usuários
-    if (!user) {
-      return res.json({ message: 'Se o e-mail informado estiver cadastrado, as instruções de recuperação foram enviadas.' });
+    const email=typeof req.body.email==='string'?req.body.email.trim().toLowerCase():'';
+    if(!email||email.length>254) return res.status(400).json({error:'E-mail invalido.'});
+    const user=await db.getAsync('SELECT id,email FROM Usuarios WHERE LOWER(email)=?',[email]);
+    if(user){
+      const code=await createChallenge(user.id,'password');
+      const link=frontendUrl()+'/redefinir-senha?token='+encodeURIComponent(user.id+'.'+code);
+      await require('../services/emailService').sendEmail(user.email,'Recuperacao de senha','Acesse para redefinir sua senha: '+link);
     }
-
-    // Gerar token criptográfico e expiração (1 hora)
-    const token = crypto.randomBytes(32).toString('hex');
-    const expires = new Date(Date.now() + 3600000).toISOString(); 
-
-    await db.runAsync(
-      'UPDATE Usuarios SET reset_password_token = ?, reset_password_expires = ? WHERE id = ?',
-      [token, expires, user.id]
-    );
-
-    // Identificar origem dinâmica (Porta 5173 ou 5174)
-    const referer = req.headers['referer'] || req.headers['origin'] || 'http://localhost:5173';
-    const baseUri = referer.includes('5174') ? 'http://localhost:5174' : 'http://localhost:5173';
-    const resetLink = `${baseUri}/redefinir-senha?token=${token}`;
-
-    logAuditEvent(user.id, 'Recuperação Solicitada', `E-mail: ${user.email}`, ip);
-
-    // Dispara o e-mail de recuperação em background (IIFE)
-    (async () => {
-      try {
-        const { sendEmail } = require('../services/emailService');
-        const subject = 'Recuperação de Senha - CourtManager';
-        const html = `
-          <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6;">
-            <h2 style="color: #4A5568;">Olá, ${user.nome}! 👋</h2>
-            <p>Recebemos uma solicitação para redefinir a senha da sua conta no <strong>CourtManager</strong>.</p>
-            <p>Para prosseguir com a redefinição de senha, clique no botão abaixo:</p>
-            <div style="margin: 30px 0;">
-              <a href="${resetLink}" style="background-color: #4A5568; color: #FFF; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Redefinir Minha Senha</a>
-            </div>
-            <p style="font-size: 0.9em; color: #718096;">Ou se preferir, copie e cole o link a seguir no seu navegador:</p>
-            <p style="font-size: 0.85em; color: #4A5568; word-break: break-all;"><a href="${resetLink}">${resetLink}</a></p>
-            <p style="font-size: 0.9em; color: #E53E3E; font-weight: bold;">Este link expira em 1 hora.</p>
-            <p style="font-size: 0.9em; color: #718096;">Se você não solicitou essa redefinição, por favor ignore este e-mail. Sua senha atual permanecerá segura.</p>
-            <hr style="border: 0; border-top: 1px solid #E2E8F0; margin: 20px 0;" />
-            <p style="font-size: 0.8em; color: #A0AEC0;">Esta é uma mensagem automática enviada por Arenix CourtManager.</p>
-          </div>
-        `;
-        await sendEmail(user.email, subject, html);
-      } catch (e) {
-        console.error('[SMTP] Erro ao disparar e-mail de recuperação:', e.message);
-      }
-    })();
-
-    res.json({ message: 'Se o e-mail informado estiver cadastrado, as instruções de recuperação foram enviadas.' });
-  } catch (error) {
-    console.error('Erro na recuperação de senha:', error);
-    res.status(500).json({ error: 'Erro interno ao processar solicitação.' });
-  }
+    res.json({message:'Se o e-mail estiver cadastrado, enviamos as instrucoes de recuperacao.'});
+  }catch(e){res.status(e.status||500).json({error:'Nao foi possivel processar a recuperacao.'});}
 };
-
-const resetPassword = async (req, res) => {
-  const { token, novaSenha } = req.body;
-  const ip = req.headers['x-forwarded-for'] || req.ip;
-
-  if (!token || !novaSenha) {
-    return res.status(400).json({ error: 'Token e nova senha são obrigatórios.' });
-  }
-
-  try {
-    // Busca usuário com token válido e expiração maior que agora
-    const user = await db.getAsync(`
-      SELECT id, nome, email FROM Usuarios 
-      WHERE reset_password_token = ? AND reset_password_expires > datetime('now')
-    `, [token]);
-
-    if (!user) {
-      return res.status(400).json({ error: 'Token de recuperação inválido ou expirado.' });
-    }
-
-    // Hash da nova senha (Bcrypt 12)
-    const novaSenhaHash = await bcrypt.hash(novaSenha, 12);
-
-    // Atualiza a senha e limpa o token (token de uso único)
-    await db.runAsync(`
-      UPDATE Usuarios 
-      SET senha_hash = ?, reset_password_token = NULL, reset_password_expires = NULL 
-      WHERE id = ?
-    `, [novaSenhaHash, user.id]);
-
-    logAuditEvent(user.id, 'Senha Redefinida', `E-mail: ${user.email}`, ip);
-
-    // Confirmação de alteração de senha por e-mail
-    (async () => {
-      try {
-        const { sendEmail } = require('../services/emailService');
-        const subject = 'Sua senha foi alterada - CourtManager';
-        const html = `
-          <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6;">
-            <h2 style="color: #2F855A;">Olá, ${user.nome}! ✔️</h2>
-            <p>Confirmamos que a senha da sua conta no <strong>CourtManager</strong> foi alterada com sucesso.</p>
-            <p>Se você realizou essa alteração, nenhuma ação adicional é necessária.</p>
-            <p style="font-size: 0.9em; color: #E53E3E; font-weight: bold;">Caso você não tenha feito essa alteração, entre em contato imediatamente com o suporte ou o administrador da sua arena.</p>
-            <hr style="border: 0; border-top: 1px solid #E2E8F0; margin: 20px 0;" />
-            <p style="font-size: 0.8em; color: #A0AEC0;">Esta é uma mensagem automática enviada por Arenix CourtManager.</p>
-          </div>
-        `;
-        await sendEmail(user.email, subject, html);
-      } catch (e) {
-        console.error('[SMTP] Erro ao disparar e-mail de confirmação de redefinição:', e.message);
-      }
-    })();
-
-    res.json({ message: 'Senha redefinida com sucesso!' });
-  } catch (error) {
-    console.error('Erro ao redefinir senha:', error);
-    res.status(500).json({ error: 'Erro interno ao redefinir senha.' });
-  }
+const resetPassword=async(req,res)=>{
+  try{
+    const match=/^(\d+)\.([A-Za-z0-9_-]{43})$/.exec(req.body.token||'');
+    if(!match) return res.status(400).json({error:'Token invalido ou expirado.'});
+    const user=await db.getAsync('SELECT perfil,two_factor_secret FROM Usuarios WHERE id=?',[match[1]]);
+    if(user?.perfil==='SuperAdmin'&&user.two_factor_secret&&!require('../utils/totp').verify(user.two_factor_secret,req.body.codigo_2fa)) return res.status(403).json({error:'Segundo fator obrigatorio.'});
+    await resetWithChallenge(Number(match[1]),'password',match[2],req.body.novaSenha);
+    res.json({message:'Senha redefinida. Faca login novamente.'});
+  }catch(e){res.status(e.status||500).json({error:e.status?e.message:'Erro ao redefinir senha.'});}
 };
 
 module.exports = { login, logout, register, forgotPassword, resetPassword };

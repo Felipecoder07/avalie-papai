@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ShieldCheck, Lock, ArrowLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';

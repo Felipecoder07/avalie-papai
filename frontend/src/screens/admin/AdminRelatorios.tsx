@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Banknote, CreditCard, Ticket } from 'lucide-react';
 import '../../assets/css/relatorios.css';

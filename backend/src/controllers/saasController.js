@@ -1,3 +1,5 @@
+const {fetch} = require('../utils/providerHttp');
+const { encrypt, decrypt, secret: randomSecret, passwordError } = require('../utils/security');
 const db = require('../config/database');
 const bcrypt = require('bcrypt');
 const crypto = require("node:crypto");
@@ -200,7 +202,7 @@ const createArena = async (req, res) => {
     const tenantId = resArena.lastID;
 
     const bcrypt = require('bcrypt');
-    const senhaHash = await bcrypt.hash(senha || 'Arenix@2026', 12);
+    const senhaHash = await bcrypt.hash(senha || randomSecret(), 12);
     await db.runAsync(`
       INSERT INTO Usuarios (nome, email, senha_hash, perfil, tenant_id)
       VALUES (?, ?, ?, 'Administrador', ?)
@@ -532,65 +534,22 @@ function verificarAssinaturaMP(req, secret) {
  * Webhook público do Mercado Pago para notificação de pagamentos de mensalidade do SaaS Master.
  * Rota: POST /api/saas/webhook-pagamento
  */
-const handleSaaSWebhook = async (req, res) => {
-  try {
-    const rawPaymentId = req.body?.data?.id || req.query?.id || req.query?.['data.id'] || req.body?.id;
-
-    if (!rawPaymentId) {
-      return res.status(200).send('OK (sem payment_id)');
-    }
-
-    const paymentIdStr = String(rawPaymentId).trim();
-    if (!/^\d+$/.test(paymentIdStr)) {
-      console.warn('[SaaS Webhook] paymentId rejeitado por formato não numérico');
-      return res.status(200).send('OK (payment_id ignorado)');
-    }
-    const paymentId = encodeURIComponent(paymentIdStr);
-
-    console.log(`[SaaS Webhook] Recebida notificação para paymentId: ${paymentId}`);
-
-    // Validação de Segurança: HMAC Webhook Signature
-    const webhookSecret = await getMasterWebhookSecret();
-    if (webhookSecret) {
-      const isValid = verificarAssinaturaMP(req, webhookSecret);
-      if (!isValid) {
-        const safeIp = String(req.ip || '').replace(/[\r\n]/g, '');
-        console.warn(`[SaaS Webhook] Rejeitado: Assinatura HMAC inválida para paymentId ${paymentId} (IP: ${safeIp})`);
-        logAuditEvent(
-          0,
-          'SaaS: Webhook Forjado Rejeitado',
-          `Tentativa de notificação de webhook com assinatura HMAC inválida (IP: ${safeIp}, Payment ID: ${paymentId})`,
-          safeIp
-        );
-        return res.status(400).json({ error: 'Assinatura de webhook HMAC inválida.' });
-      }
-    } else {
-      console.warn('[SaaS Webhook] Aviso: mp_webhook_secret não configurado. Processando notificação em modo de compatibilidade/desenvolvimento.');
-    }
-
-    const token = await saasBillingService.getMasterAccessToken();
-    if (!token) {
-      console.warn('[SaaS Webhook] Token Master não configurado.');
-      return res.status(200).send('OK (sem token master)');
-    }
-
-    const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-
-    if (response.ok) {
-      const mpPayment = await response.json();
-      if (mpPayment.status === 'approved') {
-        const resultado = await saasBillingService.liquidarFaturaSaaS(String(paymentId));
-        console.log(`[SaaS Webhook] Resultado da liquidação:`, resultado);
-      }
-    }
-
-    return res.status(200).send('OK');
-  } catch (err) {
-    console.error('[SaaS Webhook Exception]', err);
-    return res.status(200).send('OK'); // MP requer resposta 200 OK para aceitar a entrega
-  }
+const handleSaaSWebhook=async(req,res)=>{
+ try {
+  if(!await require('../utils/mpWebhook').validateWebhook(req)) return res.sendStatus(401);
+  const id=String(req.query['data.id']||req.body?.data?.id||'');
+  if(!/^\d+$/.test(id)) return res.sendStatus(400);
+  const invoice=await db.getAsync('SELECT id FROM FaturasSaaS WHERE gateway_ref=?',[id]);
+  if(!invoice) return res.sendStatus(200);
+  const token=await saasBillingService.getMasterAccessToken();
+  if(!token) return res.sendStatus(503);
+  const response=await fetch('https://api.mercadopago.com/v1/payments/'+id,{headers:{Authorization:'Bearer '+token}});
+  if(!response.ok) return res.sendStatus(503);
+  const payment=await response.json();
+  if(payment.status==='approved') await saasBillingService.liquidarFaturaSaaS(id,payment);
+  if(['refunded','charged_back'].includes(payment.status)) await db.runAsync("UPDATE FaturasSaaS SET status='Atrasada',data_pagamento=NULL WHERE gateway_ref=?",[id]);
+  res.sendStatus(200);
+ }catch(e){res.sendStatus(e.status||503);}
 };
 
 const getAllFaturasSaaS = async (req, res) => {
@@ -758,8 +717,8 @@ const changeMasterPassword = async (req, res) => {
       return res.status(400).json({ error: 'A nova senha não pode ser idêntica à senha atual.' });
     }
 
-    const secret = user.two_factor_secret || 'JBSWY3DPEHPK3PXP';
-    const is2faValido = verifyTOTP(secret, codigo_2fa.trim());
+    const secret = user.two_factor_secret;
+    const is2faValido = require('../utils/totp').verify(secret, codigo_2fa.trim());
     if (!is2faValido) {
       return res.status(401).json({ error: 'O código 2FA fornecido é inválido ou expirou.' });
     }
@@ -811,24 +770,17 @@ const toggleUsuarioStatus = async (req, res) => {
   }
 };
 
-const resetUsuarioPassword = async (req, res) => {
-  const { id } = req.params;
-  try {
-    const user = await db.getAsync('SELECT nome FROM Usuarios WHERE id = ?', [id]);
-    if (!user) {
-      return res.status(404).json({ error: 'Usuário não encontrado.' });
-    }
-    const defaultPass = 'arena123';
-    const hash = await bcrypt.hash(defaultPass, 12);
-    await db.runAsync('UPDATE Usuarios SET senha_hash = ? WHERE id = ?', [hash, id]);
-
-    logAuditEvent(req.user.id, 'SaaS: Reset Senha Usuário', `Senha do Usuário ID: ${id}, Nome: ${user.nome} redefinida para padrão`, req.ip);
-
-    res.json({ message: 'Senha do usuário redefinida com sucesso para "arena123".' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erro ao resetar senha do usuário.' });
-  }
+const resetUsuarioPassword=async(req,res)=>{
+ try {
+  const user=await db.getAsync('SELECT id,email,perfil FROM Usuarios WHERE id=?',[req.params.id]);
+  if(!user) return res.sendStatus(404);
+  if(user.perfil==='SuperAdmin') return res.status(403).json({error:'Use recuperacao pessoal com segundo fator.'});
+  const code=await require('../services/recoveryService').createChallenge(user.id);
+  const url=require('../utils/security').frontendUrl()+'/redefinir-senha?token='+user.id+'.'+code;
+  await require('../services/sessionService').revokeUser(user.id);
+  await require('../services/emailService').sendEmail(user.email,'Redefinir senha','Defina sua senha (validade: 1 hora): '+url);
+  res.json({message:'Link individual de redefinicao enviado ao e-mail cadastrado.'});
+ }catch(e){res.status(500).json({error:'Falha ao enviar recuperacao.'});}
 };
 
 const getUsuarioAcessos = async (req, res) => {
@@ -987,9 +939,6 @@ const getConfiguracoesSaaS = async (req, res) => {
       manutencao_ativa: configMap['manutencao_ativa'] || '0',
       manutencao_mensagem: configMap['manutencao_mensagem'] || '',
       mp_client_id: dbClientId,
-      mp_client_secret: dbClientSecret,
-      mp_master_access_token: dbMasterToken,
-      mp_webhook_secret: dbWebhookSecret,
       has_mp_client_secret: Boolean(dbClientSecret),
       has_mp_master_access_token: Boolean(dbMasterToken),
       has_mp_webhook_secret: Boolean(dbWebhookSecret),
@@ -1027,35 +976,15 @@ async function updateGeneralConfigs(body) {
 }
 
 async function updateMercadoPagoConfigs(body) {
-  const { mp_client_id, mp_client_secret, mp_master_access_token, mp_webhook_secret } = body;
-  const envUpdates = {};
-
-  if (mp_client_id !== undefined) {
-    const cleanId = String(mp_client_id).trim();
-    if (cleanId && !/^\d{16}$/.test(cleanId)) {
-      throw new Error('O Client ID do Mercado Pago deve conter exatamente 16 dígitos numéricos.');
+  if (body.mp_client_id !== undefined) {
+    const value = String(body.mp_client_id).trim();
+    if (value && !/^\d{16}$/.test(value)) throw new Error('Mercado Pago: Client ID invalido.');
+    await db.runAsync('INSERT OR REPLACE INTO ConfiguracoesSaaS(chave,valor) VALUES(?,?)',['mp_client_id',value]);
+  }
+  for (const key of ['mp_client_secret','mp_master_access_token','mp_webhook_secret']) {
+    if (typeof body[key] === 'string' && body[key].trim()) {
+      await db.runAsync('INSERT OR REPLACE INTO ConfiguracoesSaaS(chave,valor) VALUES(?,?)',[key,encrypt(body[key].trim())]);
     }
-    await db.runAsync('INSERT OR REPLACE INTO ConfiguracoesSaaS (chave, valor) VALUES (?, ?)', ['mp_client_id', cleanId]);
-    envUpdates['MERCADO_PAGO_CLIENT_ID'] = cleanId;
-  }
-  if (mp_client_secret !== undefined) {
-    const cleanSecret = String(mp_client_secret).trim();
-    await db.runAsync('INSERT OR REPLACE INTO ConfiguracoesSaaS (chave, valor) VALUES (?, ?)', ['mp_client_secret', cleanSecret]);
-    envUpdates['MERCADO_PAGO_CLIENT_SECRET'] = cleanSecret;
-  }
-  if (mp_master_access_token !== undefined) {
-    const cleanToken = String(mp_master_access_token).trim();
-    await db.runAsync('INSERT OR REPLACE INTO ConfiguracoesSaaS (chave, valor) VALUES (?, ?)', ['mp_master_access_token', cleanToken]);
-    envUpdates['MERCADO_PAGO_ACCESS_TOKEN'] = cleanToken;
-  }
-  if (mp_webhook_secret !== undefined) {
-    const cleanWebhookSecret = String(mp_webhook_secret).trim();
-    await db.runAsync('INSERT OR REPLACE INTO ConfiguracoesSaaS (chave, valor) VALUES (?, ?)', ['mp_webhook_secret', cleanWebhookSecret]);
-    envUpdates['MERCADO_PAGO_WEBHOOK_SECRET'] = cleanWebhookSecret;
-  }
-
-  if (Object.keys(envUpdates).length > 0) {
-    syncEnvFile(envUpdates);
   }
 }
 

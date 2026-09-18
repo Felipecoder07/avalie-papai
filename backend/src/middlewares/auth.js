@@ -1,16 +1,12 @@
-const jwt = require('jsonwebtoken');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'secret-jwt-courtmanager-2026';
+const { authenticate } = require('../services/sessionService');
 
 async function verificarStatusTenantEManutencao(db, user, originalUrl) {
   if (user.perfil === 'SuperAdmin' || !user.tenant_id) return null;
 
   try {
-    const isWhitelistedRoute = originalUrl && (
-      originalUrl.includes('/api/tenant/assinatura') || 
-      originalUrl.includes('/api/auth/me') ||
-      originalUrl.includes('/api/auth/logout')
-    );
+    const pathname = (originalUrl || '').split('?')[0];
+    const isWhitelistedRoute = pathname.startsWith('/api/tenant/assinatura/') ||
+      ['/api/tenant/assinatura', '/api/auth/me', '/api/auth/logout'].includes(pathname);
 
     const arena = await db.getAsync('SELECT status FROM Arenas WHERE id = ?', [user.tenant_id]);
     if (!arena || arena.status === -1) {
@@ -39,34 +35,21 @@ async function verificarStatusTenantEManutencao(db, user, originalUrl) {
       };
     }
   } catch (checkErr) {
-    console.error('Erro ao verificar status da arena no middleware:', checkErr);
+    return { status: 503, body: { error: 'Não foi possível validar o acesso. Tente novamente.' } };
   }
 
   return null;
 }
 
-const verifyToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  if (!authHeader) return res.status(403).json({ error: 'Token não fornecido.' });
-
-  const token = authHeader.split(' ')[1];
-  if (!token) return res.status(403).json({ error: 'Formato de token inválido.' });
-
-  jwt.verify(token, JWT_SECRET, async (err, decoded) => {
-    if (err) return res.status(401).json({ error: 'Token expirado ou inválido.' });
-    req.user = decoded;
-
-    const db = require('../config/database');
-    db.runAsync('UPDATE SessoesAtivas SET ultimo_acesso = CURRENT_TIMESTAMP WHERE token = ?', [token])
-      .catch(errSess => console.error('Erro ao atualizar atividade da sessao:', errSess));
-
-    const checkResult = await verificarStatusTenantEManutencao(db, req.user, req.originalUrl);
-    if (checkResult) {
-      return res.status(checkResult.status).json(checkResult.body);
-    }
-
+const verifyToken = async (req, res, next) => {
+  try {
+    req.user = await authenticate(req);
+    const checkResult = await verificarStatusTenantEManutencao(require('../config/database'), req.user, req.originalUrl);
+    if (checkResult) return res.status(checkResult.status).json(checkResult.body);
     next();
-  });
+  } catch (error) {
+    res.status(error.status || 503).json({ error: error.status ? error.message : 'Não foi possível validar a sessão.' });
+  }
 };
 
 const requireRole = (roles) => {

@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect, useCallback } from 'react';
 import { X, Search, CalendarCheck, Clock, Loader2, Ticket, QrCode, ArrowRight, Ban, CheckCircle2, MessageCircle, AlertTriangle, ShieldCheck, Printer, Share2, FileText } from 'lucide-react';
 import { brl, maskPhone, formatLongDate } from '../lib/format';
@@ -70,6 +71,27 @@ interface CancelResult {
     cliente_telefone: string;
     cliente_cpf: string;
   };
+}
+
+function isReservaPassada(dataIso: string, horaInicio: string): boolean {
+  try {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
+
+    if (dataIso < todayStr) return true;
+    if (dataIso === todayStr) {
+      const hours = String(today.getHours()).padStart(2, '0');
+      const minutes = String(today.getMinutes()).padStart(2, '0');
+      const currentTimeStr = `${hours}:${minutes}`;
+      return horaInicio <= currentTimeStr;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 export default function MyReservations({ slug, athlete, open, onClose, onPayPending }: Readonly<Props>) {
@@ -216,27 +238,6 @@ export default function MyReservations({ slug, athlete, open, onClose, onPayPend
       });
     } finally {
       setCancelingLoading(false);
-    }
-  };
-
-  const isReservaPassada = (dataIso: string, horaInicio: string) => {
-    try {
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-      const todayStr = `${year}-${month}-${day}`;
-
-      if (dataIso < todayStr) return true;
-      if (dataIso === todayStr) {
-        const hours = String(today.getHours()).padStart(2, '0');
-        const minutes = String(today.getMinutes()).padStart(2, '0');
-        const currentTimeStr = `${hours}:${minutes}`;
-        return horaInicio <= currentTimeStr;
-      }
-      return false;
-    } catch {
-      return false;
     }
   };
 

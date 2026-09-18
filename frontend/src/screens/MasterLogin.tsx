@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Lock, Mail, Eye, EyeOff } from 'lucide-react';
@@ -7,6 +8,9 @@ import { Card, Button, Input, Field } from '../components/ui';
 export function MasterLogin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [factor,setFactor]=useState('');
+  const [qr,setQr]=useState('');
+  const [recoveryCodes,setRecoveryCodes]=useState<string[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -23,12 +27,18 @@ export function MasterLogin() {
     setErrorMsg('');
 
     try {
+      if(qr){
+        const confirmation=await fetch('/api/auth/mfa/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo_2fa:factor})});
+        const data=await confirmation.json();
+        if(!confirmation.ok){setErrorMsg(data.error);setLoading(false);return;}
+        setRecoveryCodes(data.recovery_codes);setQr('');setLoading(false);return;
+      }
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, senha: password }),
+        body: JSON.stringify({ email, senha: password, codigo_2fa:factor.length===6?factor:undefined,recovery_code:factor.length>6?factor:undefined }),
       });
 
       const data = await res.json();
@@ -51,6 +61,12 @@ export function MasterLogin() {
       safeStorage.setItem('courtmanager_token', safeToken);
       safeStorage.setItem('courtmanager_user', safeUser);
 
+      if(data.requires_mfa_setup){
+        const setup=await fetch('/api/auth/mfa/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({senha:password})});
+        const enrollment=await setup.json();
+        if(!setup.ok) setErrorMsg(enrollment.error); else {setQr(enrollment.qr_code);setFactor('');}
+        setLoading(false);return;
+      }
       navigate('/master/dashboard', { replace: true });
     } catch (err) {
       const safeErr = String(err instanceof Error ? err.message : err).replace(/[\r\n]/g, '');
@@ -120,6 +136,11 @@ export function MasterLogin() {
               </div>
             </Field>
 
+            <Field label="Codigo do autenticador ou recuperacao">
+              <Input value={factor} onChange={(e: React.ChangeEvent<HTMLInputElement>)=>setFactor(e.target.value)} autoComplete="one-time-code" />
+            </Field>
+            {qr && <div><p>Escaneie no autenticador e confirme o codigo de 6 digitos.</p><img src={qr} alt="Cadastrar segundo fator" /></div>}
+            {recoveryCodes.length>0 && <div><p>Guarde estes codigos em local seguro. Cada codigo permite recuperar o acesso uma vez.</p><pre>{recoveryCodes.join('\n')}</pre><button type="button" onClick={()=>navigate('/master/dashboard',{replace:true})}>Codigos guardados. Continuar</button></div>}
             <Button
               type="submit"
               variant="primary"

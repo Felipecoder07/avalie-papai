@@ -1,131 +1,9 @@
+const { fetch } = require('../utils/providerHttp');
 const db = require('../config/database');
 const { sendEmail } = require('./emailService');
 const crypto = require("node:crypto");
 
-const atualizarStatusReservaInterna = async (reserva_id, tenant_id) => {
-  const reserva = await db.getAsync('SELECT valor_total, status, status_pagamento FROM Reservas WHERE id = ? AND tenant_id = ?', [reserva_id, tenant_id]);
-  const resultPagamentos = await db.getAsync('SELECT SUM(valor) as total_pago FROM Pagamentos WHERE reserva_id = ?', [reserva_id]);
-
-  const totalPago = resultPagamentos.total_pago || 0;
-  const saldoDevedor = reserva.valor_total - totalPago;
-
-  let novoStatus = 'Pendente';
-  if (reserva.status === 'Cancelada') {
-    if (totalPago <= 0) {
-      novoStatus = (reserva.status_pagamento === 'Estornado' || totalPago === 0) ? 'Estornado' : 'Cancelado';
-    } else {
-      novoStatus = 'Parcial'; 
-    }
-  } else {
-    if (saldoDevedor <= 0) novoStatus = 'Pago';
-    else if (totalPago > 0) novoStatus = 'Parcial';
-  }
-
-  await db.runAsync('UPDATE Reservas SET status_pagamento = ? WHERE id = ?', [novoStatus, reserva_id]);
-  return { totalPago, saldoDevedor, novoStatus };
-};
-
-async function validarSegurançaLiquidacao(transacao, payload) {
-  if (payload.valor_pago !== undefined && Math.abs(Number.parseFloat(payload.valor_pago) - transacao.valor) > 0.01) {
-    throw new Error('O valor pago na maquineta é divergente do saldo registrado na reserva.');
-  }
-
-  const reserva = await db.getAsync('SELECT tenant_id, status, status_pagamento FROM Reservas WHERE id = ?', [transacao.reserva_id]);
-  if (reserva && payload.device_id !== undefined) {
-    const arena = await db.getAsync('SELECT gateway_device_id FROM Arenas WHERE id = ?', [reserva.tenant_id]);
-    if (!arena || arena.gateway_device_id !== payload.device_id) {
-      throw new Error('Terminal de pagamento (device_id) físico inválido para esta Arena.');
-    }
-  }
-  return reserva;
-}
-
-function resolverMetodoPagamentoGateway(metodo) {
-  if (metodo === 'Cartao') return 'Cartão de Crédito Online';
-  if (metodo === 'Maquineta') return 'Cartão (Maquineta)';
-  return 'Pix Online';
-}
-
-async function atualizarStatusReservasAposLiquidacao(reserva, reservaId, tenantId) {
-  const resFull = await db.getAsync('SELECT grupo_id FROM Reservas WHERE id = ?', [reservaId]);
-  if (resFull?.grupo_id) {
-    await db.runAsync(
-      'UPDATE Reservas SET status = "Confirmada", status_pagamento = "Pago" WHERE grupo_id = ? AND tenant_id = ?',
-      [resFull.grupo_id, tenantId]
-    );
-  } else if (reserva.status === 'Pendente') {
-    await db.runAsync('UPDATE Reservas SET status = "Confirmada" WHERE id = ?', [reservaId]);
-  }
-}
-
-async function enviarEmailComprovanteLiquidacao(reservaId, tenantId, transacaoValor, metodoPagamento, saldoDevedor, novoStatus) {
-  try {
-    const details = await db.getAsync(`
-      SELECT r.id, r.data_reserva, r.hora_inicio, r.hora_fim, q.nome as quadra_nome, c.nome as cliente_nome, c.email
-      FROM Reservas r
-      JOIN Quadras q ON r.quadra_id = q.id
-      JOIN Clientes c ON r.cliente_id = c.id
-      WHERE r.id = ?
-    `, [reservaId]);
-
-    if (details?.email) {
-      const arena = await db.getAsync('SELECT nome FROM Arenas WHERE id = ?', [tenantId]);
-      const subject = 'Comprovante de Pagamento — Arenix 🎾';
-      const html = `
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6;">
-          <h2 style="color: #2F855A; border-bottom: 2px solid #E2E8F0; padding-bottom: 10px;">Pagamento Confirmado! 💠</h2>
-          <p>Olá, <strong>${details.cliente_nome}</strong>!</p>
-          <p>Confirmamos o recebimento do seu pagamento online para a reserva <strong>#${details.id}</strong>.</p>
-          <div style="background-color: #F7FAFC; border: 1px solid #E2E8F0; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            📅 <strong>Data:</strong> ${details.data_reserva.split('-').reverse().join('/')}<br />
-            ⏰ <strong>Horário:</strong> ${details.hora_inicio} às ${details.hora_fim}<br />
-            🎾 <strong>Quadra:</strong> ${details.quadra_nome}<br />
-            💳 <strong>Método:</strong> ${metodoPagamento}<br />
-            💵 <strong>Valor Pago:</strong> R$ ${transacaoValor.toFixed(2).replace('.', ',')}<br />
-            📉 <strong>Saldo Devedor Restante:</strong> R$ ${saldoDevedor.toFixed(2).replace('.', ',')}<br />
-            📊 <strong>Status do Pagamento:</strong> ${novoStatus === 'Pago' ? 'Pago (Quitado) ✅' : 'Pagamento Parcial ⚠️'}
-          </div>
-          <p>Bom jogo!</p>
-          <hr style="border: 0; border-top: 1px solid #E2E8F0; margin: 20px 0;" />
-          <p style="font-size: 0.8em; color: #A0AEC0;">Esta é uma mensagem automática enviada por Arenix CourtManager em nome de ${arena ? arena.nome : 'sua Arena'}.</p>
-        </div>
-      `;
-      await sendEmail(details.email, subject, html);
-    }
-  } catch (e) {
-    console.error('[SMTP] Erro ao disparar e-mail de recibo no gateway:', e.message);
-  }
-}
-
-const processarLiquidacao = async (gateway_ref, payload = {}) => {
-  const transacao = await db.getAsync('SELECT * FROM TransacoesGateway WHERE gateway_ref = ?', [gateway_ref]);
-  if (!transacao) {
-    throw new Error('Transação não encontrada.');
-  }
-
-  if (transacao.status === 'Pago') {
-    return { status: 'already_paid', reserva_id: transacao.reserva_id };
-  }
-
-  const reserva = await validarSegurançaLiquidacao(transacao, payload);
-
-  await db.runAsync('UPDATE TransacoesGateway SET status = "Pago", atualizado_em = CURRENT_TIMESTAMP WHERE id = ?', [transacao.id]);
-
-  const metodoPagamento = resolverMetodoPagamentoGateway(transacao.metodo);
-  
-  await db.runAsync(`
-    INSERT INTO Pagamentos (reserva_id, valor, metodo, registrado_por)
-    VALUES (?, ?, ?, NULL)
-  `, [transacao.reserva_id, transacao.valor, metodoPagamento]);
-
-  if (reserva) {
-    await atualizarStatusReservasAposLiquidacao(reserva, transacao.reserva_id, reserva.tenant_id);
-    const { saldoDevedor, novoStatus } = await atualizarStatusReservaInterna(transacao.reserva_id, reserva.tenant_id);
-    enviarEmailComprovanteLiquidacao(transacao.reserva_id, reserva.tenant_id, transacao.valor, metodoPagamento, saldoDevedor, novoStatus);
-  }
-
-  return { status: 'success', reserva_id: transacao.reserva_id };
-};
+const processarLiquidacao = require('./paymentLedgerService').settle;
 
 /**
  * Retorna o access_token ESPECÍFICO da arena (conectado via OAuth).
@@ -137,7 +15,7 @@ const obterTokenGatewayArena = async (tenant_id) => {
   if (!tenant_id) return null;
   const arena = await db.getAsync('SELECT gateway_access_token FROM Arenas WHERE id = ?', [tenant_id]);
   if (arena && arena.gateway_access_token && arena.gateway_access_token.trim() !== '') {
-    return arena.gateway_access_token.trim();
+    return require('../utils/security').decrypt(arena.gateway_access_token.trim());
   }
   // Não fazer fallback para token do master — cada arena usa apenas a própria conta
   return null;
@@ -145,7 +23,7 @@ const obterTokenGatewayArena = async (tenant_id) => {
 
 const { gerarPixEMV } = require('../utils/pixPayload');
 
-const criarCobrancaPix = async (reserva_id, valor, tenant_id) => {
+const criarCobrancaPixRaw = async (reserva_id, valor, tenant_id, intentKey) => {
   const token = await obterTokenGatewayArena(tenant_id);
 
   // Sem token = verificar se a arena possui chave Pix cadastrada para gerar QR Code direto
@@ -164,7 +42,7 @@ const criarCobrancaPix = async (reserva_id, valor, tenant_id) => {
         txid: `RESERVA${reserva_id}`
       });
 
-      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(copiaCola)}`;
+      const qrCodeUrl = await require('qrcode').toDataURL(copiaCola);
 
       return {
         qr_code: qrCodeUrl,
@@ -181,7 +59,7 @@ const criarCobrancaPix = async (reserva_id, valor, tenant_id) => {
   }
 
   try {
-    const idempotencyKey = crypto.randomBytes(16).toString('hex');
+    const idempotencyKey = intentKey;
 
     const details = await db.getAsync(`
       SELECT c.email, c.nome FROM Reservas r
@@ -216,7 +94,7 @@ const criarCobrancaPix = async (reserva_id, valor, tenant_id) => {
       const txRef = String(mpData.id);
 
       await db.runAsync(`
-        INSERT INTO TransacoesGateway (reserva_id, gateway_ref, valor, status, metodo)
+        INSERT OR IGNORE INTO TransacoesGateway (reserva_id, gateway_ref, valor, status, metodo)
         VALUES (?, ?, ?, 'Pendente', 'Pix')
       `, [reserva_id, txRef, valor]);
 
@@ -239,7 +117,7 @@ const criarCobrancaPix = async (reserva_id, valor, tenant_id) => {
 };
 
 
-const criarCobrancaCartao = async (reserva_id, valor, card_data, tenant_id) => {
+const criarCobrancaCartaoRaw = async (reserva_id, valor, card_data, tenant_id, intentKey) => {
   const token = await obterTokenGatewayArena(tenant_id);
 
   if (!token) {
@@ -254,7 +132,7 @@ const criarCobrancaCartao = async (reserva_id, valor, card_data, tenant_id) => {
   }
 
   try {
-    const idempotencyKey = crypto.randomBytes(16).toString('hex');
+    const idempotencyKey = intentKey;
 
     const details = await db.getAsync(`
       SELECT c.email FROM Reservas r
@@ -286,7 +164,7 @@ const criarCobrancaCartao = async (reserva_id, valor, card_data, tenant_id) => {
       const txRef = String(mpData.id);
 
       await db.runAsync(`
-        INSERT INTO TransacoesGateway (reserva_id, gateway_ref, valor, status, metodo)
+        INSERT OR IGNORE INTO TransacoesGateway (reserva_id, gateway_ref, valor, status, metodo)
         VALUES (?, ?, ?, 'Pendente', 'Cartao')
       `, [reserva_id, txRef, valor]);
 
@@ -306,7 +184,7 @@ const criarCobrancaCartao = async (reserva_id, valor, card_data, tenant_id) => {
 };
 
 
-const criarCobrancaMaquineta = async (reserva_id, valor, tenant_id) => {
+const criarCobrancaMaquinetaRaw = async (reserva_id, valor, tenant_id, intentKey) => {
   const arena = await db.getAsync('SELECT gateway_device_id FROM Arenas WHERE id = ?', [tenant_id]);
 
   if (!arena || !arena.gateway_device_id) {
@@ -324,7 +202,7 @@ const criarCobrancaMaquineta = async (reserva_id, valor, tenant_id) => {
   }
 
   try {
-    const idempotencyKey = crypto.randomBytes(16).toString('hex');
+    const idempotencyKey = intentKey;
 
     const response = await fetch(`https://api.mercadopago.com/v1/devices/${deviceId}/point-integration-api/payment-intents`, {
       method: 'POST',
@@ -345,7 +223,7 @@ const criarCobrancaMaquineta = async (reserva_id, valor, tenant_id) => {
       const txRef = String(mpData.id);
 
       await db.runAsync(`
-        INSERT INTO TransacoesGateway (reserva_id, gateway_ref, valor, status, metodo)
+        INSERT OR IGNORE INTO TransacoesGateway (reserva_id, gateway_ref, valor, status, metodo)
         VALUES (?, ?, ?, 'Pendente', 'Maquineta')
       `, [reserva_id, txRef, valor]);
 
@@ -362,48 +240,51 @@ const criarCobrancaMaquineta = async (reserva_id, valor, tenant_id) => {
   }
 };
 
-const estornarPagamentoPix = async (reserva_id, tenant_id) => {
-  const token = await obterTokenGatewayArena(tenant_id);
-  if (!token) return { success: false, reason: 'no_gateway_token' };
-
-  const tx = await db.getAsync(`
-    SELECT gateway_ref, status FROM TransacoesGateway
-    WHERE reserva_id = ? AND (status = 'Aprovado' OR status = 'Pago')
-    ORDER BY id DESC LIMIT 1
-  `, [reserva_id]);
-
-  if (!tx || !tx.gateway_ref) {
-    return { success: false, reason: 'no_approved_transaction' };
+const estornarPagamentoPix=async(reserva_id,tenant_id)=>{
+ const token=await obterTokenGatewayArena(tenant_id);
+ if(!token) return {success:false,reason:'no_gateway_token'};
+ const {ensureSecuritySchema}=require('../config/securitySchema');await ensureSecuritySchema(db);
+ const reservation=await db.getAsync('SELECT * FROM Reservas WHERE id=? AND tenant_id=?',[reserva_id,tenant_id]);
+ if(!reservation) return {success:false,reason:'not_found'};
+ const rows=await db.allAsync("SELECT t.* FROM TransacoesGateway t JOIN Reservas r ON r.id=t.reserva_id WHERE r.tenant_id=? AND (r.id=? OR r.grupo_id=?) AND t.status IN ('Pago','Aprovado')",[tenant_id,reserva_id,reservation.grupo_id]);
+ if(!rows.length) return {success:false,reason:'no_approved_transaction'};
+ for(const tx of rows){
+  const selected=await db.transaction(async()=>{
+   const credit=await db.getAsync('SELECT * FROM GatewayCredits WHERE gateway_ref=?',[tx.gateway_ref]);
+   if(!credit) return null;
+   const prior=await db.getAsync("SELECT amount_cents FROM RefundIntents WHERE id=?",['provider:'+tx.gateway_ref]);
+   const amount=credit.amount_cents-(prior?.amount_cents||0);
+   if(amount<=0) return {done:true};
+   const open=await db.getAsync("SELECT * FROM RefundIntents WHERE gateway_ref=? AND state IN ('pending','unknown')",[tx.gateway_ref]);
+   if(open){
+    if(open.state==='pending'&&Date.now()-open.created<30000)return {busy:true};
+    await db.runAsync("UPDATE RefundIntents SET state='pending',created=? WHERE id=?",[Date.now(),open.id]);
+    return {id:open.id,amount:open.amount_cents,total:credit.amount_cents};
+   }
+   const id=require('../utils/security').secret();
+   await db.runAsync("INSERT INTO RefundIntents(id,gateway_ref,amount_cents,state,created) VALUES(?,?,?,'pending',?)",[id,tx.gateway_ref,amount,Date.now()]);
+   return {id,amount,total:credit.amount_cents};
+  });
+  if(!selected||selected.busy) return {success:false,reason:'pending_reconciliation'};
+  if(selected.done) continue;
+  try{
+   const response=await fetch('https://api.mercadopago.com/v1/payments/'+encodeURIComponent(tx.gateway_ref)+'/refunds',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json','X-Idempotency-Key':selected.id},body:JSON.stringify({amount:selected.amount/100})});
+   const refund=await response.json();
+   if(!response.ok||refund.status!=='approved'||require('../utils/security').cents(refund.amount)!==selected.amount) throw new Error('Refund unconfirmed');
+   await require('./paymentLedgerService').reverse(tx.gateway_ref,selected.total/100);
+   await db.runAsync("UPDATE RefundIntents SET state='completed',response_json=? WHERE id=?",[JSON.stringify({id:refund.id,status:refund.status}),selected.id]);
+  }catch(e){
+   await db.runAsync("UPDATE RefundIntents SET state='unknown' WHERE id=?",[selected.id]);
+   return {success:false,reason:'pending_reconciliation'};
   }
-
-  try {
-    const response = await fetch(`https://api.mercadopago.com/v1/payments/${tx.gateway_ref}/refunds`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (response.ok) {
-      await db.runAsync(`
-        UPDATE TransacoesGateway SET status = 'Estornado', atualizado_em = CURRENT_TIMESTAMP
-        WHERE gateway_ref = ?
-      `, [tx.gateway_ref]);
-
-      return { success: true, gateway_ref: tx.gateway_ref };
-    } else {
-      const errData = await response.json();
-      const safeMsg = String(errData?.message || 'Falha ao estornar pagamento').replace(/[\r\n]/g, '');
-      console.error(`[Mercado Pago Refund Error] ${safeMsg}`);
-      return { success: false, reason: 'api_error', details: { message: safeMsg } };
-    }
-  } catch (err) {
-    console.error('[Mercado Pago Refund Exception]', err);
-    return { success: false, reason: 'exception', error: err.message };
-  }
+ }
+ return {success:true};
 };
 
+const {withIntent}=require('./paymentIntentService');
+const criarCobrancaPix=(id,valor,tenant)=>withIntent('Pix',id,valor,tenant,key=>criarCobrancaPixRaw(id,valor,tenant,key));
+const criarCobrancaCartao=(id,valor,card,tenant)=>withIntent('Cartao',id,valor,tenant,key=>criarCobrancaCartaoRaw(id,valor,card,tenant,key));
+const criarCobrancaMaquineta=(id,valor,tenant)=>withIntent('Maquineta',id,valor,tenant,key=>criarCobrancaMaquinetaRaw(id,valor,tenant,key));
 module.exports = {
   criarCobrancaPix,
   criarCobrancaCartao,

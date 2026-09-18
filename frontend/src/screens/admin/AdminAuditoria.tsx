@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useEffect, useState, useRef } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import '../../assets/css/auditoria.css';

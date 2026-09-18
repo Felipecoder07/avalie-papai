@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../../utils/apiFetch';
 import React, { useState, useEffect } from 'react';
 import '../../assets/css/pagamentos.css';
 

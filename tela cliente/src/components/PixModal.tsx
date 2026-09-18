@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../utils/apiFetch';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { X, Copy, Check, Clock, ShieldCheck, Loader2 } from 'lucide-react';
 import type { ReservationInput } from '../types';

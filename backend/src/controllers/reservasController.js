@@ -124,110 +124,33 @@ async function dispararEmailConfirmacao(tenant_id, cliente_id, quadra_id, data_r
   }
 }
 
-const criarReserva = async (req, res) => {
-  try {
-    const { cliente_id, quadra_id, data_reserva, hora_inicio, hora_fim } = req.body;
-    const ip = req.headers['x-forwarded-for'] || req.ip;
-    const usuario_id = req.user ? req.user.id : null;
-
-    if (!cliente_id || !quadra_id || !data_reserva || !hora_inicio || !hora_fim) {
-      return res.status(400).json({ error: 'Todos os campos (cliente_id, quadra_id, data_reserva, hora_inicio, hora_fim) são obrigatórios.' });
-    }
-
-    const todayStr = getTodayString();
-    const currentTimeStr = getLocalTimeString();
-
-    if (data_reserva < todayStr) {
-      return res.status(400).json({ error: 'Não é permitido criar agendamentos em datas passadas.' });
-    }
-    if (data_reserva === todayStr && hora_fim <= currentTimeStr) {
-      return res.status(400).json({ error: 'Não é permitido criar agendamentos em horários que já se encerraram.' });
-    }
-
-    const tenant_id = req.user.tenant_id;
-
-    // 1. Buscar quadra
-    const quadra = await db.getAsync(
-      'SELECT preco_base, modalidades, tipo, hora_abertura, hora_fechamento, status FROM Quadras WHERE id = ? AND tenant_id = ?',
-      [quadra_id, tenant_id]
-    );
-    if (!quadra) return res.status(404).json({ error: 'Quadra não encontrada ou não pertence a esta arena.' });
-    if (quadra.status !== 'Ativa') {
-      return res.status(400).json({ error: 'Não é possível criar agendamentos em quadras inativas ou desativadas.' });
-    }
-
-    // 2. RN-002: Validar horário de funcionamento
-    const horaAbertura = quadra.hora_abertura || '08:00';
-    const horaFechamento = quadra.hora_fechamento || '22:00';
-    if (hora_inicio < horaAbertura || hora_fim > horaFechamento) {
-      return res.status(400).json({
-        error: `Reserva fora do horário de funcionamento (${horaAbertura} às ${horaFechamento}).`
-      });
-    }
-
-    // 3. Limpar reservas pendentes expiradas
-    await db.runAsync(
-      `UPDATE Reservas 
-       SET status = 'Cancelada', status_pagamento = 'Expirado' 
-       WHERE status = 'Pendente' AND status_pagamento = 'Pendente' 
-         AND datetime(criado_em, '+15 minutes') < datetime('now')`
-    );
-
-    // 4. RN-001: Validar sobreposição de reservas
-    const conflitoReservas = await db.getAsync(`
-      SELECT id FROM Reservas 
-      WHERE quadra_id = ? AND data_reserva = ? AND status != 'Cancelada'
-      AND (hora_inicio < ? AND hora_fim > ?)
-    `, [quadra_id, data_reserva, hora_fim, hora_inicio]);
-
-    if (conflitoReservas) {
-      return res.status(409).json({ error: 'A quadra já possui uma reserva neste horário.' });
-    }
-
-    // 5. RN-003, RN-012: Validar conflito com bloqueios
-    const conflitoBloqueios = await db.getAsync(`
-      SELECT id FROM Bloqueios
-      WHERE quadra_id = ? AND data_bloqueio = ?
-      AND (hora_inicio < ? AND hora_fim > ?)
-    `, [quadra_id, data_reserva, hora_fim, hora_inicio]);
-
-    if (conflitoBloqueios) {
-      return res.status(409).json({ error: 'A quadra está bloqueada para manutenção/evento neste horário.' });
-    }
-
-    // 6. Calcular valor e status inicial
-    const esporte = req.body.esporte || 'Geral';
-    const valor_total = calcularPrecoReserva(quadra, esporte, hora_inicio, hora_fim, req.body.valor_total);
-    const statusInicial = 'Confirmada';
-    let statusPagamentoInicial = valor_total === 0 ? 'Pago' : 'Pendente';
-
-    // 7. Salvar a reserva
-    const insert = await db.runAsync(`
-      INSERT INTO Reservas (tenant_id, cliente_id, quadra_id, data_reserva, hora_inicio, hora_fim, valor_total, status, status_pagamento, criado_por, esporte)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [tenant_id, cliente_id, quadra_id, data_reserva, hora_inicio, hora_fim, valor_total, statusInicial, statusPagamentoInicial, usuario_id, esporte]);
-
-    const reservaId = insert.lastID;
-
-    // 8. Processar pagamento imediato no balcão se solicitado
-    statusPagamentoInicial = await processarPagamentoBalcao(reservaId, valor_total, req.body.pagamento, usuario_id, ip);
-
-    logAuditEvent(usuario_id, 'Criação de reserva', `Reserva ID: ${reservaId}, Quadra: ${quadra_id}, Data: ${data_reserva} ${hora_inicio}, StatusPagamento: ${statusPagamentoInicial}`, ip);
-
-    // 9. E-mail de confirmação em background
-    dispararEmailConfirmacao(tenant_id, cliente_id, quadra_id, data_reserva, hora_inicio, hora_fim, valor_total);
-
-    res.status(201).json({
-      message: 'Reserva criada com sucesso.',
-      reserva_id: reservaId,
-      valor_total,
-      status_pagamento: statusPagamentoInicial
-    });
-
-  } catch (error) {
-    console.error('Erro ao criar reserva:', error);
-    res.status(500).json({ error: 'Erro interno do servidor.' });
-  }
+const criarReserva=async(req,res)=>{
+ try {
+  const {cents,httpError}=require('../utils/security');
+  const tenant=req.user.tenant_id,item=req.body;
+  const result=await db.transaction(async()=>{
+   const court=await require('../services/bookingService').validateSlot(tenant,item);
+   const client=await db.getAsync('SELECT id FROM Clientes WHERE id=? AND tenant_id=? AND ativo=1',[item.cliente_id,tenant]);
+   if(!client) throw httpError(404,'Cliente nao pertence a esta arena.');
+   const computed=Math.round(calcularPrecoReserva(court,item.esporte,item.hora_inicio,item.hora_fim)*100);
+   let total=computed;
+   if(item.valor_total!==undefined && cents(item.valor_total,{zero:true})!==computed){
+    total=cents(item.valor_total,{zero:true});
+    if(!['Administrador','Gerente'].includes(req.user.perfil)||!item.justificativa_desconto||total>computed||(req.user.perfil==='Gerente'&&total<Math.ceil(computed*0.7))) throw httpError(403,'Alteracao de preco exige desconto autorizado e justificativa.');
+   }
+   const inserted=await db.runAsync("INSERT INTO Reservas(tenant_id,cliente_id,quadra_id,data_reserva,hora_inicio,hora_fim,valor_total,status,status_pagamento,criado_por,esporte) VALUES(?,?,?,?,?,?,?,'Confirmada',?,?,?)",[tenant,client.id,item.quadra_id,item.data_reserva,item.hora_inicio,item.hora_fim,total/100,total===0?'Pago':'Pendente',req.user.id,item.esporte||'Geral']);
+   if(item.pagamento?.registrar){
+    const paid=cents(item.pagamento.valor===undefined?total/100:item.pagamento.valor);
+    if(paid>total) throw httpError(400,'Pagamento acima do saldo.');
+    const method=require('../services/manualPaymentService').manualMethod(item.pagamento.metodo);
+    await db.runAsync('INSERT INTO Pagamentos(reserva_id,valor,metodo,registrado_por) VALUES(?,?,?,?)',[inserted.lastID,paid/100,method,req.user.id]);
+   }
+   const balance=await require('../services/paymentLedgerService').recompute(inserted.lastID);
+   return {reserva_id:inserted.lastID,valor_total:total/100,status_pagamento:balance.novoStatus};
+  });
+  logAuditEvent(req.user.id,'Criacao de reserva','Reserva: '+result.reserva_id,req.ip);
+  res.status(201).json({message:'Reserva criada.',...result});
+ }catch(e){res.status(e.status||500).json({error:e.status?e.message:'Erro ao criar reserva.'});}
 };
 
 const minhasReservas = async (req, res) => {

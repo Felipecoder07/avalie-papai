@@ -38,7 +38,9 @@ const publicBookingLimiter = rateLimit({
   skip: isTest
 });
 
-module.exports = {
+const globalLimiter = rateLimit({ windowMs:60000,limit:300,standardHeaders:true,legacyHeaders:false,skip:isTest });
+const recoveryLimiter = rateLimit({windowMs:900000,limit:5,standardHeaders:true,legacyHeaders:false,skip:isTest});
+module.exports = { globalLimiter, recoveryLimiter,
   loginLimiter,
   publicApiLimiter,
   publicAuthLimiter,

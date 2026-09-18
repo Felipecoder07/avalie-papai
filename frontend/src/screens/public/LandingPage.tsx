@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../../utils/apiFetch';
 import { Link } from 'react-router-dom';
 import '../../assets/css/landing.css';
 

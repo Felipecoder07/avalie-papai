@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from './utils/apiFetch';
 import { useEffect, useMemo, useState } from 'react';
 import type { Court, Slot, ReservationInput, ArenaInfo } from './types';
 import ArenaHeader from './components/ArenaHeader';
@@ -631,7 +632,8 @@ export default function App() {
     setLoginOpen(false);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await fetch(BACKEND_URL+'/api/auth/logout',{method:'POST'}).catch(()=>undefined);
     setAthlete(null);
     localStorage.removeItem('atleta_token');
     localStorage.removeItem('courtmanager_athlete_token');

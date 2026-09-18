@@ -12,8 +12,8 @@ const {
 } = require('../controllers/reservasController');
 const { verifyToken, requireRole } = require('../middlewares/auth');
 
-router.get('/grade', verifyToken, listarGrade);
-router.post('/', verifyToken, criarReserva);
+router.get('/grade', verifyToken, requireRole(['Administrador', 'Gerente', 'Recepcionista']), listarGrade);
+router.post('/', verifyToken, requireRole(['Administrador', 'Gerente', 'Recepcionista']), criarReserva);
 router.post('/bloqueios', verifyToken, requireRole(['Administrador', 'Gerente']), criarBloqueio);
 router.delete('/bloqueios/:id', verifyToken, requireRole(['Administrador', 'Gerente']), removerBloqueio);
 router.delete('/bloqueios/:id/horario', verifyToken, requireRole(['Administrador', 'Gerente']), desbloquearHoraDelete);

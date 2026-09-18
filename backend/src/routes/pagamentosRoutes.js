@@ -5,13 +5,13 @@ const { registrarPagamento, aplicarDesconto, registrarEstorno, resumoPagamentos,
 const db = require('../config/database');
 
 // KPIs financeiros do dia/mês
-router.get('/resumo',   verifyToken, resumoPagamentos);
+router.get('/resumo', verifyToken, requireRole(['Administrador', 'Gerente', 'Recepcionista']), resumoPagamentos);
 
 // Listagem de reservas com dados de pagamento
-router.get('/reservas', verifyToken, listarReservasPagamentos);
+router.get('/reservas', verifyToken, requireRole(['Administrador', 'Gerente', 'Recepcionista']), listarReservasPagamentos);
 
 // Listar pagamentos de uma reserva específica (com validação multi-tenant)
-router.get('/reserva/:reserva_id', verifyToken, async (req, res) => {
+router.get('/reserva/:reserva_id', verifyToken, requireRole(['Administrador', 'Gerente', 'Recepcionista']), async (req, res) => {
   try {
     const pags = await db.allAsync(`
       SELECT p.* FROM Pagamentos p
@@ -26,7 +26,7 @@ router.get('/reserva/:reserva_id', verifyToken, async (req, res) => {
 });
 
 // Registrar novo pagamento
-router.post('/', verifyToken, registrarPagamento);
+router.post('/', verifyToken, requireRole(['Administrador', 'Gerente', 'Recepcionista']), registrarPagamento);
 
 // Aplicar desconto (RN-007: Apenas Gerente ou Admin)
 router.post('/desconto', verifyToken, requireRole(['Administrador', 'Gerente']), aplicarDesconto);
@@ -35,4 +35,3 @@ router.post('/desconto', verifyToken, requireRole(['Administrador', 'Gerente']),
 router.post('/estorno', verifyToken, requireRole(['Administrador']), registrarEstorno);
 
 module.exports = router;
-

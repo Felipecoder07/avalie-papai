@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Wrench, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { Badge, Button, ConfirmModal } from '../components/ui';
@@ -541,12 +542,12 @@ export function MasterConfiguracoes() {
         setMaintenanceMsg(data.manutencao_mensagem);
         setReasons(data.reasons || []);
         setMpClientId(data.mp_client_id || '');
-        setMpClientSecret(data.mp_client_secret || '');
-        setMpMasterToken(data.mp_master_access_token || '');
-        setHasClientSecret(Boolean(data.mp_client_secret));
-        setHasMasterToken(Boolean(data.mp_master_access_token));
-        setClientSecretPreview(data.mp_client_secret ? `***${data.mp_client_secret.slice(-4)}` : '');
-        setMasterTokenPreview(data.mp_master_access_token ? `***${data.mp_master_access_token.slice(-4)}` : '');
+        setMpClientSecret('');
+        setMpMasterToken('');
+        setHasClientSecret(Boolean(data.has_mp_client_secret));
+        setHasMasterToken(Boolean(data.has_mp_master_access_token));
+        setClientSecretPreview(data.has_mp_client_secret ? 'Configurado' : '');
+        setMasterTokenPreview(data.has_mp_master_access_token ? 'Configurado' : '');
       } else {
         const data = await res.json();
         showToast(data.error || 'Erro ao carregar configurações.', 'error');

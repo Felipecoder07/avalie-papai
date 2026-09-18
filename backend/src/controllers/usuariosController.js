@@ -1,6 +1,9 @@
 const bcrypt = require('bcrypt');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
+const { assertManagedUser } = require('../utils/permissions');
+const { revokeUser } = require('../services/sessionService');
+const { passwordError } = require('../utils/security');
 
 // ─── LISTAR USUÁRIOS ─────────────────────────────────────────────────────────
 const listarUsuarios = async (req, res) => {
@@ -25,12 +28,13 @@ const criarUsuario = async (req, res) => {
   const admin_id = req.user.id;
   const ip = req.headers['x-forwarded-for'] || req.ip;
 
-  if (!nome || !email || !senha || !perfil) {
+  if (!nome || !email || !perfil) {
     return res.status(400).json({ error: 'Todos os campos são obrigatórios para criação.' });
   }
 
   try {
     const tenant_id = req.user.tenant_id;
+    assertManagedUser(req.user, null, perfil);
 
     // Validar limite de usuários do plano SaaS da arena
     const arenaPlano = await db.getAsync(`
@@ -55,27 +59,12 @@ const criarUsuario = async (req, res) => {
       }
     }
 
-    const crypto = require("node:crypto");
-    // Gerar token de ativação (válido por 7 dias)
-    const token = crypto.randomBytes(32).toString('hex');
-    const expires = new Date(Date.now() + 7 * 24 * 3600000).toISOString();
-
-    // Senha aleatória temporária (conta travada até o primeiro reset)
-    const tempPassword = crypto.randomBytes(16).toString('hex');
-    const senha_hash = await bcrypt.hash(tempPassword, 12);
-
-    const result = await db.runAsync(
-      `INSERT INTO Usuarios (tenant_id, nome, email, senha_hash, perfil, reset_password_token, reset_password_expires) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [req.user.tenant_id, nome, email, senha_hash, perfil, token, expires]
-    );
-
-    logAuditEvent(admin_id, 'Criação de Usuário', `Criou o usuário ${email} (${perfil})`, ip);
-
-    // Identificar origem dinâmica
-    const referer = req.headers['referer'] || req.headers['origin'] || 'http://localhost:5173';
-    const baseUri = referer.includes('5174') ? 'http://localhost:5174' : 'http://localhost:5173';
-    const activationLink = `${baseUri}/redefinir-senha?token=${token}`;
+    const {secret,frontendUrl}=require('../utils/security');
+    const senha_hash=await bcrypt.hash(secret(),12);
+    const result=await db.runAsync('INSERT INTO Usuarios(tenant_id,nome,email,senha_hash,perfil) VALUES(?,?,?,?,?)',[tenant_id,nome,email.trim().toLowerCase(),senha_hash,perfil]);
+    const token=await require('../services/recoveryService').createChallenge(result.lastID);
+    const activationLink=frontendUrl()+'/redefinir-senha?token='+result.lastID+'.'+token;
+    logAuditEvent(admin_id,'Convite de usuario','Usuario ID: '+result.lastID,ip);
 
     // Dispara o e-mail de boas-vindas do funcionário em background
     (async () => {
@@ -97,7 +86,7 @@ const criarUsuario = async (req, res) => {
             </div>
             <p style="font-size: 0.9em; color: #718096;">Ou copie o link a seguir no seu navegador:</p>
             <p style="font-size: 0.85em; color: #2F855A; word-break: break-all;"><a href="${activationLink}">${activationLink}</a></p>
-            <p style="font-size: 0.9em; color: #E53E3E; font-weight: bold;">Este link de ativação é válido por 7 dias.</p>
+            <p style="font-size: 0.9em; color: #E53E3E; font-weight: bold;">Este link de ativação é válido por 1 hora.</p>
             <hr style="border: 0; border-top: 1px solid #E2E8F0; margin: 20px 0;" />
             <p style="font-size: 0.8em; color: #A0AEC0;">Esta é uma mensagem automática enviada por Arenix CourtManager.</p>
           </div>
@@ -110,6 +99,7 @@ const criarUsuario = async (req, res) => {
 
     res.status(201).json({ message: 'Usuário criado com sucesso e e-mail de ativação enviado.', id: result.lastID });
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ error: error.message });
     console.error(error);
     if (error.message && error.message.includes('UNIQUE constraint failed')) {
       return res.status(400).json({ error: 'Já existe um usuário cadastrado com este e-mail.' });
@@ -130,6 +120,10 @@ const editarUsuario = async (req, res) => {
   }
 
   try {
+    const target = await db.getAsync('SELECT id, tenant_id, perfil FROM Usuarios WHERE id = ? AND tenant_id = ?', [id, req.user.tenant_id]);
+    if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    assertManagedUser(req.user, target, perfil);
+    if (senha && passwordError(senha)) return res.status(400).json({ error: passwordError(senha) });
     let sql = `UPDATE Usuarios SET nome = ?, email = ?, perfil = ? WHERE id = ? AND tenant_id = ?`;
     let params = [nome, email, perfil, id, req.user.tenant_id];
 
@@ -140,6 +134,7 @@ const editarUsuario = async (req, res) => {
     }
 
     const result = await db.runAsync(sql, params);
+    await revokeUser(id);
     
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Usuário não encontrado.' });
@@ -148,6 +143,7 @@ const editarUsuario = async (req, res) => {
     logAuditEvent(admin_id, 'Edição de Usuário', `Editou os dados do usuário ID ${id} (${email})`, ip);
     res.json({ message: 'Usuário atualizado com sucesso.' });
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ error: error.message });
     console.error(error);
     if (error.message.includes('UNIQUE constraint failed')) {
       return res.status(400).json({ error: 'O e-mail informado já está em uso por outro usuário.' });
@@ -168,7 +164,10 @@ const excluirUsuario = async (req, res) => {
   }
 
   try {
-    const usuario = await db.getAsync(`SELECT perfil FROM Usuarios WHERE id = ? AND tenant_id = ?`, [id, req.user.tenant_id]);
+    const usuario = await db.getAsync(`SELECT id, tenant_id, perfil FROM Usuarios WHERE id = ? AND tenant_id = ?`, [id, req.user.tenant_id]);
+    if (!usuario) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    assertManagedUser(req.user, usuario, usuario.perfil);
+    await revokeUser(id);
     if (usuario && usuario.perfil === 'Administrador') {
       return res.status(403).json({ error: 'Não é possível excluir um Administrador.' });
     }
@@ -182,6 +181,7 @@ const excluirUsuario = async (req, res) => {
     logAuditEvent(admin_id, 'Exclusão de Usuário', `Excluiu o usuário ID ${id}`, ip);
     res.json({ message: 'Usuário excluído com sucesso.' });
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ error: error.message });
     console.error(error);
     res.status(500).json({ error: 'Erro ao excluir usuário.' });
   }

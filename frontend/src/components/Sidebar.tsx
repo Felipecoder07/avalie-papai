@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../utils/apiFetch';
 import { LayoutDashboard, Building2, FileText, Wallet, Users, Megaphone, ShieldCheck, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SidebarShell, type NavItem, type SidebarProps } from './SidebarShell';

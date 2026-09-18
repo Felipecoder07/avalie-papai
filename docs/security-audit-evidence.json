@@ -1,0 +1,135 @@
+{
+  "environment": "production branches; SQLite :memory:; fake identities; external providers mocked",
+  "findings": [
+    {
+      "id": "google_forgery",
+      "status": 200,
+      "victimSessionIssued": true
+    },
+    {
+      "id": "forged_google_reads_profile",
+      "status": 200,
+      "victimCpfReturned": true
+    },
+    {
+      "id": "client_reads_other_clients",
+      "status": 200,
+      "victimEmailReturned": true
+    },
+    {
+      "id": "client_reads_other_payments",
+      "status": 200,
+      "victimReservationReturned": true
+    },
+    {
+      "id": "client_marks_payment_without_provider",
+      "status": 201,
+      "reservation": {
+        "status_pagamento": "Pago"
+      },
+      "providerCalls": 0
+    },
+    {
+      "id": "client_creates_free_cross_tenant_client_booking",
+      "status": 201,
+      "reservation": {
+        "tenant_id": 91001,
+        "cliente_id": 91103,
+        "valor_total": 0,
+        "status_pagamento": "Pago"
+      }
+    },
+    {
+      "id": "anonymous_phone_data_leak",
+      "status": 200,
+      "victimEmailReturned": true,
+      "victimCpfReturned": true
+    },
+    {
+      "id": "anonymous_cancels_booking",
+      "status": 200,
+      "reservation": {
+        "status": "Cancelada"
+      }
+    },
+    {
+      "id": "anonymous_status_ignores_tenant_slug",
+      "status": 200,
+      "returnedReservationId": 91403
+    },
+    {
+      "id": "tenant_admin_becomes_superadmin",
+      "editStatus": 200,
+      "newRole": "SuperAdmin",
+      "masterStatus": 200,
+      "otherArenaReturned": true
+    },
+    {
+      "id": "promoted_admin_reads_payment_secrets",
+      "status": 200,
+      "masterTokenReturned": true,
+      "oauthSecretReturned": true
+    },
+    {
+      "id": "anonymous_checkout_overwrites_other_tenant_client",
+      "status": 201,
+      "victim": {
+        "tenant_id": 91002,
+        "nome": "Audit Overwritten",
+        "telefone": "(11) 90000-0099",
+        "cpf": "00000000099"
+      }
+    },
+    {
+      "id": "revoked_session_still_works",
+      "logoutStatus": 200,
+      "afterLogoutStatus": 200,
+      "afterDisableStatus": 200
+    },
+    {
+      "id": "concurrent_webhooks_duplicate_payment",
+      "statuses": [
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "entries": {
+        "count": 5,
+        "total": 500
+      }
+    },
+    {
+      "id": "partial_payment_marks_group_paid",
+      "chargeStatus": 200,
+      "webhookStatus": 200,
+      "reservations": [
+        {
+          "id": 91404,
+          "valor_total": 100,
+          "status_pagamento": "Parcial"
+        },
+        {
+          "id": 91405,
+          "valor_total": 100,
+          "status_pagamento": "Pago"
+        }
+      ],
+      "paid": {
+        "total": 1
+      }
+    },
+    {
+      "id": "reset_expiry_format",
+      "expiredByHours": 2,
+      "accepted": 1,
+      "actuallyValid": 0
+    },
+    {
+      "id": "expired_reset_token_accepted_http",
+      "status": 200,
+      "passwordChanged": true
+    }
+  ]
+}

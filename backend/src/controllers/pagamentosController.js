@@ -1,328 +1,59 @@
-const db = require('../config/database');
-const logAuditEvent = require('../utils/auditLogger');
-const { getTodayString, getLocalTimeString } = require('../utils/dateUtils');
+const db=require('../config/database');
+const logAuditEvent=require('../utils/auditLogger');
+const {getTodayString,getLocalTimeString}=require('../utils/dateUtils');
+const {cents,httpError}=require('../utils/security');
+const {recompute}=require('../services/paymentLedgerService');
+const {manualMethod}=require('../services/manualPaymentService');
+const safe=fn=>async(req,res)=>{try{await fn(req,res)}catch(e){res.status(e.status||500).json({error:e.status?e.message:'Falha na operacao financeira.'})}};
+const registrarPagamento=safe(async(req,res)=>{
+ const amount=cents(req.body.valor),method=manualMethod(req.body.metodo),tenant=req.user.tenant_id,id=req.body.reserva_id;
+ const result=await db.transaction(async()=>{
+  const r=await db.getAsync('SELECT * FROM Reservas WHERE id=? AND tenant_id=?',[id,tenant]);
+  if(!r) throw httpError(404,'Reserva nao encontrada.');
+  if(r.status==='Cancelada') throw httpError(400,'Reserva cancelada.');
+  const paid=await db.getAsync('SELECT COALESCE(SUM(valor),0) AS total FROM Pagamentos WHERE reserva_id=?',[id]);
+  if(amount>cents(r.valor_total,{zero:true})-Math.round(paid.total*100)) throw httpError(400,'Valor acima do saldo devedor.');
+  const inserted=await db.runAsync('INSERT INTO Pagamentos(reserva_id,valor,metodo,registrado_por) VALUES(?,?,?,?)',[id,amount/100,method,req.user.id]);
+  return {pagamento_id:inserted.lastID,...await recompute(id)};
+ });
+ logAuditEvent(req.user.id,'Pagamento manual','Reserva: '+id+', valor: '+amount/100,req.ip);
+ res.status(201).json({message:'Pagamento registrado.',pagamento_id:result.pagamento_id,saldo_devedor:result.saldoDevedor,status_pagamento:result.novoStatus});
+});
+const aplicarDesconto=safe(async(req,res)=>{
+ const percent=Number(req.body.desconto_percentual);
+ if(!['Administrador','Gerente'].includes(req.user.perfil)) throw httpError(403,'Perfil nao autorizado.');
+ if(typeof req.body.desconto_percentual!=='number'||!Number.isFinite(percent)||percent<0||percent>100) throw httpError(400,'Desconto invalido.');
+ if(req.user.perfil==='Gerente'&&percent>30) throw httpError(403,'Limite do gerente: 30%.');
+ const result=await db.transaction(async()=>{
+  const r=await db.getAsync('SELECT * FROM Reservas WHERE id=? AND tenant_id=?',[req.body.reserva_id,req.user.tenant_id]);
+  if(!r) throw httpError(404,'Reserva nao encontrada.');
+  const paid=await db.getAsync('SELECT COALESCE(SUM(valor),0) AS total FROM Pagamentos WHERE reserva_id=?',[r.id]);
+  const total=Math.round(cents(r.valor_total,{zero:true})*(100-percent)/100);
+  if(total<Math.round(paid.total*100)||r.status==='Cancelada') throw httpError(400,'Desconto abaixo do recebido ou reserva cancelada.');
+  const open=await db.getAsync("SELECT id FROM TransacoesGateway WHERE reserva_id=? AND status='Pendente'",[r.id]);
+  if(open) throw httpError(409,'Existe cobranca online pendente.');
+  await db.runAsync('UPDATE Reservas SET valor_total=? WHERE id=?',[total/100,r.id]);
+  return {novo_valor_total:total/100,...await recompute(r.id)};
+ });
+ res.json({message:'Desconto aplicado.',novo_valor_total:result.novo_valor_total,saldo_devedor:result.saldoDevedor});
+});
+const registrarEstorno=safe(async(req,res)=>{
+ if(req.user.perfil!=='Administrador') throw httpError(403,'Perfil nao autorizado.');
+ const result=await db.transaction(async()=>{
+  const r=await db.getAsync('SELECT r.* FROM Reservas r WHERE r.tenant_id=? AND r.id=COALESCE(?,(SELECT reserva_id FROM Pagamentos WHERE id=?))',[req.user.tenant_id,req.body.reserva_id,req.body.pagamento_id]);
+  if(!r) throw httpError(404,'Pagamento nao encontrado.');
+  // Online refunds must use the provider and its persisted allocation; never create a manual receipt.
+  const online=await db.getAsync("SELECT id FROM TransacoesGateway WHERE reserva_id IN (SELECT id FROM Reservas WHERE id=? OR (grupo_id=? AND tenant_id=?))",[r.id,r.grupo_id,r.tenant_id]);
+  if(online) throw httpError(409,'Pagamento online: use o cancelamento com devolucao pelo provedor.');
+  const paid=await db.getAsync('SELECT COALESCE(SUM(valor),0) AS total FROM Pagamentos WHERE reserva_id=?',[r.id]);
+  const amount=req.body.valor===undefined?Math.round(paid.total*100):cents(req.body.valor);
+  if(amount<=0||amount>Math.round(paid.total*100)) throw httpError(400,'Valor acima do saldo estornavel.');
+  await db.runAsync('INSERT INTO Pagamentos(reserva_id,valor,metodo,registrado_por) VALUES(?,?,?,?)',[r.id,-amount/100,'Estorno',req.user.id]);
+  return recompute(r.id);
+ });
+ res.json({message:'Estorno manual registrado.',saldo_devedor:result.saldoDevedor,status_pagamento:result.novoStatus});
+});
 
-// Função auxiliar para recalcular status da reserva com base nos pagamentos efetuados (RN-005 e RN-006)
-const atualizarStatusReserva = async (reserva_id, tenant_id) => {
-  const reserva = await db.getAsync('SELECT valor_total, status, status_pagamento FROM Reservas WHERE id = ? AND tenant_id = ?', [reserva_id, tenant_id]);
-  const resultPagamentos = await db.getAsync('SELECT SUM(valor) as total_pago FROM Pagamentos WHERE reserva_id = ?', [reserva_id]);
-
-  const totalPago = resultPagamentos.total_pago || 0;
-  const saldoDevedor = reserva.valor_total - totalPago;
-
-  let novoStatus = 'Pendente';
-  if (reserva.status === 'Cancelada') {
-    if (totalPago <= 0) {
-      novoStatus = (reserva.status_pagamento === 'Estornado' || totalPago === 0) ? 'Estornado' : 'Cancelado';
-    } else {
-      novoStatus = 'Parcial'; 
-    }
-  } else {
-    if (saldoDevedor <= 0) novoStatus = 'Pago';
-    else if (totalPago > 0) novoStatus = 'Parcial';
-  }
-
-  await db.runAsync('UPDATE Reservas SET status_pagamento = ? WHERE id = ?', [novoStatus, reserva_id]);
-  return { totalPago, saldoDevedor, novoStatus };
-};
-
-const registrarPagamento = async (req, res) => {
-  try {
-    const { reserva_id, valor, metodo } = req.body;
-    const ip = req.headers['x-forwarded-for'] || req.ip;
-    const usuario_id = req.user ? req.user.id : null;
-
-    const mapaMetodos = {
-      'pix': 'Pix',
-      'pix (manual)': 'Pix',
-      'pix online': 'Pix Online',
-      'pix online (gateway)': 'Pix Online',
-      'dinheiro': 'Dinheiro',
-      'credito': 'Cartão de Crédito',
-      'cartao de credito': 'Cartão de Crédito',
-      'cartão de crédito': 'Cartão de Crédito',
-      'debito': 'Cartão de Débito',
-      'cartao de debito': 'Cartão de Débito',
-      'cartão de débito': 'Cartão de Débito',
-      'voucher': 'Voucher Interno',
-      'voucher interno': 'Voucher Interno',
-      'maquineta': 'Cartão (Maquineta)',
-      'cartão (maquineta)': 'Cartão (Maquineta)',
-      'cartão (maquineta online)': 'Cartão (Maquineta)'
-    };
-
-    const metodoNormalizado = mapaMetodos[metodo ? metodo.toLowerCase().trim() : ''] || metodo;
-
-    const whitelistMetodos = [
-      'Pix', 
-      'Dinheiro', 
-      'Cartão de Crédito', 
-      'Cartão de Débito', 
-      'Voucher Interno',
-      'Pix Online',
-      'Cartão de Crédito Online',
-      'Cartão (Maquineta)'
-    ];
-    if (!whitelistMetodos.includes(metodoNormalizado)) {
-      return res.status(400).json({ error: `Método de pagamento inválido. Escolha um entre: ${whitelistMetodos.join(', ')}` });
-    }
-
-    if (valor <= 0) return res.status(400).json({ error: 'O valor deve ser maior que zero.' });
-
-    // Validar se o valor excede o saldo devedor e se a reserva não está cancelada
-    const reserva = await db.getAsync('SELECT valor_total, status FROM Reservas WHERE id = ? AND tenant_id = ?', [reserva_id, req.user.tenant_id]);
-    if (!reserva) return res.status(404).json({ error: 'Reserva não encontrada.' });
-    if (reserva.status === 'Cancelada') {
-      return res.status(400).json({ error: 'Não é permitido registrar pagamentos para uma reserva cancelada.' });
-    }
-    
-    const resultPagamentos = await db.getAsync('SELECT SUM(valor) as total_pago FROM Pagamentos WHERE reserva_id = ?', [reserva_id]);
-    const totalPago = resultPagamentos.total_pago || 0;
-    const saldoAtual = reserva.valor_total - totalPago;
-
-    if (valor > saldoAtual) {
-      return res.status(400).json({ error: `O valor (R$ ${valor.toFixed(2)}) não pode ser maior que o saldo devedor (R$ ${saldoAtual.toFixed(2)}).` });
-    }
-
-    // Salvar pagamento no histórico
-    const insert = await db.runAsync(
-      'INSERT INTO Pagamentos (reserva_id, valor, metodo, registrado_por) VALUES (?, ?, ?, ?)',
-      [reserva_id, valor, metodoNormalizado, usuario_id]
-    );
-
-    // Calcular novo saldo (RN-005) e atualizar status da reserva (RN-006)
-    const { saldoDevedor, novoStatus } = await atualizarStatusReserva(reserva_id, req.user.tenant_id);
-
-    logAuditEvent(usuario_id, 'Pagamento Registrado', `Reserva: ${reserva_id}, Valor: ${valor}, Método: ${metodo}`, ip);
-
-    // Dispara e-mail de confirmação de pagamento em background (defensivo)
-    (async () => {
-      try {
-        const clientQuery = `
-          SELECT c.nome, c.email, r.data_reserva, r.hora_inicio, r.hora_fim, q.nome as quadra_nome, r.valor_total
-          FROM Reservas r
-          JOIN Clientes c ON r.cliente_id = c.id
-          JOIN Quadras q ON r.quadra_id = q.id
-          WHERE r.id = ?
-        `;
-        const details = await db.getAsync(clientQuery, [reserva_id]);
-        const arena = await db.getAsync('SELECT nome FROM Arenas WHERE id = ?', [req.user.tenant_id]);
-        
-        if (details && details.email) {
-          const { sendEmail } = require('../services/emailService');
-          const subject = `Comprovante de Pagamento - ${arena ? arena.nome : 'Arenix'}`;
-          const html = `
-            <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6;">
-              <h2 style="color: #2F855A;">Olá, ${details.nome}! Recibo de Pagamento 🧾</h2>
-              <p>Confirmamos o recebimento do seu pagamento referente ao agendamento de quadra.</p>
-              <div style="background-color: #F7FAFC; border: 1px solid #E2E8F0; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <strong>Detalhes do Pagamento:</strong><br />
-                💰 <strong>Valor Pago:</strong> R$ ${Number.parseFloat(valor).toFixed(2).replace('.', ',')}<br />
-                💳 <strong>Método:</strong> ${metodo}<br />
-                📅 <strong>Data da Reserva:</strong> ${details.data_reserva.split('-').reverse().join('/')}<br />
-                🕒 <strong>Horário:</strong> ${details.hora_inicio} às ${details.hora_fim}<br />
-                🎾 <strong>Quadra:</strong> ${details.quadra_nome}<br />
-                <hr style="border: 0; border-top: 1px solid #E2E8F0; margin: 10px 0;" />
-                📉 <strong>Saldo Devedor Restante:</strong> R$ ${saldoDevedor.toFixed(2).replace('.', ',')}<br />
-                📊 <strong>Status do Pagamento:</strong> ${novoStatus === 'Pago' ? 'Pago (Quitado) ✅' : 'Pagamento Parcial ⚠️'}
-              </div>
-              <p>Obrigado e bom jogo!</p>
-              <hr style="border: 0; border-top: 1px solid #E2E8F0; margin: 20px 0;" />
-              <p style="font-size: 0.8em; color: #A0AEC0;">Esta é uma mensagem automática enviada por Arenix CourtManager em nome de ${arena ? arena.nome : 'sua Arena'}.</p>
-            </div>
-          `;
-          await sendEmail(details.email, subject, html);
-        }
-      } catch (e) {
-        console.error('[SMTP] Erro ao disparar e-mail de recibo:', e.message);
-      }
-    })();
-
-    res.status(201).json({
-      message: 'Pagamento registrado com sucesso.',
-      pagamento_id: insert.lastID,
-      saldo_devedor: saldoDevedor,
-      status_pagamento: novoStatus
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Erro interno ao registrar pagamento.' });
-  }
-};
-
-const aplicarDesconto = async (req, res) => {
-  try {
-    const { reserva_id, desconto_percentual } = req.body;
-    const ip = req.headers['x-forwarded-for'] || req.ip;
-    const usuario = req.user;
-
-    if (desconto_percentual < 0 || desconto_percentual > 100) {
-      return res.status(400).json({ error: 'O desconto deve estar entre 0% e 100%.' });
-    }
-
-    // RN-007: Gerentes podem dar até 30% de desconto. Admins não tem limite.
-    if (usuario.perfil === 'Gerente' && desconto_percentual > 30) {
-      return res.status(403).json({ error: 'Gerentes só podem aplicar no máximo 30% de desconto.' });
-    }
-
-    const reserva = await db.getAsync('SELECT valor_total FROM Reservas WHERE id = ? AND tenant_id = ?', [reserva_id, req.user.tenant_id]);
-    if (!reserva) return res.status(404).json({ error: 'Reserva não encontrada.' });
-
-    // Buscar quanto o cliente já pagou para não permitir valor total abaixo do já pago
-    const resultPagamentos = await db.getAsync('SELECT SUM(valor) as total_pago FROM Pagamentos WHERE reserva_id = ?', [reserva_id]);
-    const totalPago = resultPagamentos.total_pago || 0;
-
-    const valorDesconto = reserva.valor_total * (desconto_percentual / 100);
-    const novoValorTotal = reserva.valor_total - valorDesconto;
-
-    if (novoValorTotal < totalPago) {
-      return res.status(400).json({ error: `Desconto inválido. O novo valor (R$ ${novoValorTotal.toFixed(2)}) não pode ser inferior ao valor já pago pelo cliente (R$ ${totalPago.toFixed(2)}).` });
-    }
-
-    await db.runAsync('UPDATE Reservas SET valor_total = ? WHERE id = ?', [novoValorTotal, reserva_id]);
-    const { saldoDevedor, novoStatus } = await atualizarStatusReserva(reserva_id, req.user.tenant_id);
-
-    logAuditEvent(usuario.id, 'Desconto Aplicado', `Reserva: ${reserva_id}, Desconto: ${desconto_percentual}%`, ip);
-
-    res.json({
-      message: 'Desconto aplicado com sucesso.',
-      novo_valor_total: novoValorTotal,
-      saldo_devedor: saldoDevedor
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Erro ao aplicar desconto.' });
-  }
-};
-
-async function resolveEstornoTarget(tenant_id, pagamento_id, reserva_id) {
-  if (pagamento_id) {
-    const pagamento = await db.getAsync(
-      'SELECT p.* FROM Pagamentos p JOIN Reservas r ON p.reserva_id = r.id WHERE p.id = ? AND r.tenant_id = ?',
-      [pagamento_id, tenant_id]
-    );
-    if (!pagamento) return { error: 'Pagamento não encontrado.', status: 404 };
-    if (pagamento.valor < 0) return { error: 'Pagamento já é um estorno.', status: 400 };
-    return { finalReservaId: pagamento.reserva_id, maxEstornavel: pagamento.valor };
-  }
-  
-  if (reserva_id) {
-    const reserva = await db.getAsync(
-      'SELECT r.* FROM Reservas r WHERE r.id = ? AND r.tenant_id = ?',
-      [reserva_id, tenant_id]
-    );
-    if (!reserva) return { error: 'Reserva não encontrada.', status: 404 };
-    return { finalReservaId: reserva.id, maxEstornavel: 0 };
-  }
-
-  return { error: 'É necessário informar pagamento_id ou reserva_id.', status: 400 };
-}
-
-async function dispararEmailEstorno(tenant_id, finalReservaId, valorEstornoInfo, descMotivo) {
-  try {
-    const clientQuery = `
-      SELECT c.nome, c.email, r.data_reserva, r.hora_inicio, r.hora_fim, q.nome as quadra_nome
-      FROM Reservas r
-      JOIN Clientes c ON r.cliente_id = c.id
-      JOIN Quadras q ON r.quadra_id = q.id
-      WHERE r.id = ?
-    `;
-    const details = await db.getAsync(clientQuery, [finalReservaId]);
-    const arena = await db.getAsync('SELECT nome FROM Arenas WHERE id = ?', [tenant_id]);
-    
-    if (details && details.email) {
-      const { sendEmail } = require('../services/emailService');
-      const subject = `Reembolso / Estorno Realizado - ${arena ? arena.nome : 'Arenix'}`;
-      const html = `
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6;">
-          <h2 style="color: #DD6B20;">Notificação de Estorno / Reembolso ↩️</h2>
-          <p>Olá, ${details.nome}. Informamos que um estorno de pagamento foi registrado para o seu agendamento.</p>
-          <div style="background-color: #FFFAF0; border: 1px solid #FEEBC8; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <strong>Detalhes do Estorno:</strong><br />
-            💰 <strong>Valor Estornado:</strong> R$ ${Number.parseFloat(valorEstornoInfo).toFixed(2).replace('.', ',')}<br />
-            ❌ <strong>Motivo/Justificativa:</strong> ${descMotivo}<br />
-            📅 <strong>Reserva Original:</strong> ${details.data_reserva.split('-').reverse().join('/')} (${details.hora_inicio} às ${details.hora_fim})<br />
-            🎾 <strong>Quadra:</strong> ${details.quadra_nome}
-          </div>
-          <p>O valor estornado será processado de acordo com o método original de pagamento. Em caso de dúvidas, fale com a recepção da arena.</p>
-          <hr style="border: 0; border-top: 1px solid #E2E8F0; margin: 20px 0;" />
-          <p style="font-size: 0.8em; color: #A0AEC0;">Esta é uma mensagem automática enviada por Arenix CourtManager em nome de ${arena ? arena.nome : 'sua Arena'}.</p>
-        </div>
-      `;
-      await sendEmail(details.email, subject, html);
-    }
-  } catch (e) {
-    console.error('[SMTP] Erro ao disparar e-mail de estorno:', e.message);
-  }
-}
-
-const registrarEstorno = async (req, res) => {
-  try {
-    const { pagamento_id, reserva_id, valor, motivo, motivo_estorno } = req.body;
-    const ip = req.headers['x-forwarded-for'] || req.ip;
-    const usuario = req.user;
-    const descMotivo = motivo || motivo_estorno || 'Estorno parcial';
-
-    if (usuario.perfil !== 'Administrador') {
-      return res.status(403).json({ error: 'Apenas Administradores podem realizar estornos.' });
-    }
-
-    const target = await resolveEstornoTarget(req.user.tenant_id, pagamento_id, reserva_id);
-    if (target.error) {
-      return res.status(target.status).json({ error: target.error });
-    }
-    const { finalReservaId, maxEstornavel } = target;
-
-    const saldoLiquidoQuery = await db.getAsync(`
-      SELECT 
-        COALESCE(SUM(CASE WHEN valor > 0 THEN valor ELSE 0 END), 0) AS total_positivo,
-        COALESCE(SUM(CASE WHEN valor < 0 THEN ABS(valor) ELSE 0 END), 0) AS total_negativo
-      FROM Pagamentos 
-      WHERE reserva_id = ?
-    `, [finalReservaId]);
-
-    const totalPositivo = saldoLiquidoQuery.total_positivo;
-    const totalNegativo = saldoLiquidoQuery.total_negativo;
-    const saldoDisponivelReserva = totalPositivo - totalNegativo;
-
-    let limiteMaximo = saldoDisponivelReserva;
-    if (pagamento_id && maxEstornavel < limiteMaximo) {
-      limiteMaximo = maxEstornavel;
-    }
-
-    const valorEstornoInfo = valor !== undefined ? Number.parseFloat(valor) : limiteMaximo;
-    if (Number.isNaN(valorEstornoInfo) || valorEstornoInfo <= 0) {
-      return res.status(400).json({ error: 'O valor do estorno deve ser maior que zero.' });
-    }
-
-    if (valorEstornoInfo > limiteMaximo) {
-      return res.status(400).json({ error: `O valor do estorno (R$ ${valorEstornoInfo.toFixed(2)}) não pode ser maior que o saldo disponível para estorno (R$ ${limiteMaximo.toFixed(2)}).` });
-    }
-
-    const valorEstornoNegativo = -Math.abs(valorEstornoInfo);
-    await db.runAsync(
-      'INSERT INTO Pagamentos (reserva_id, valor, metodo, registrado_por) VALUES (?, ?, ?, ?)',
-      [finalReservaId, valorEstornoNegativo, 'Estorno', usuario.id]
-    );
-
-    const { saldoDevedor, novoStatus } = await atualizarStatusReserva(finalReservaId, req.user.tenant_id);
-    logAuditEvent(usuario.id, 'Estorno Realizado', `Reserva: ${finalReservaId}, Valor: ${Math.abs(valorEstornoNegativo)}, Motivo: ${descMotivo}`, ip);
-
-    dispararEmailEstorno(req.user.tenant_id, finalReservaId, valorEstornoInfo, descMotivo);
-
-    res.json({
-      message: 'Estorno realizado com sucesso.',
-      saldo_devedor: saldoDevedor,
-      status_pagamento: novoStatus
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Erro ao registrar estorno.' });
-  }
-};
-
-// ─── RESUMO KPI ───────────────────────────────────────────────────────────────
 const resumoPagamentos = async (req, res) => {
   try {
     const hoje = getTodayString();

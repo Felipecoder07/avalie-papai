@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useState, useEffect, useMemo } from 'react';
 import { UserPlus, CreditCard } from 'lucide-react';
 import '../../assets/css/reservas.css';

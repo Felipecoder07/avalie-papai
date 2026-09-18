@@ -1,3 +1,5 @@
+const {fetch} = require('../utils/providerHttp');
+const { decrypt, simulationAllowed } = require('../utils/security');
 /**
  * saasBillingService.js
  * Serviço responsável por toda a lógica de cobrança de mensalidades do SaaS.
@@ -32,7 +34,7 @@ const { sendEmail } = require('./emailService');
 const getMasterAccessToken = async () => {
   const row = await db.getAsync("SELECT valor FROM ConfiguracoesSaaS WHERE chave = 'mp_master_access_token'");
   if (row && row.valor && row.valor.trim() !== '') {
-    return row.valor.trim();
+    return decrypt(row.valor.trim());
   }
   if (process.env.MERCADO_PAGO_ACCESS_TOKEN && process.env.MERCADO_PAGO_ACCESS_TOKEN.trim() !== '') {
     return process.env.MERCADO_PAGO_ACCESS_TOKEN.trim();
@@ -74,7 +76,7 @@ const gerarPixFaturaSaaS = async (faturaId) => {
     const expiracao = new Date(fatura.qr_expira_em);
     if (agora < expiracao) {
       const fallbackQr = fatura.copia_cola 
-        ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(fatura.copia_cola)}` 
+        ? await require('qrcode').toDataURL(fatura.copia_cola) 
         : null;
       return {
         qr_code: fallbackQr,
@@ -92,7 +94,7 @@ const gerarPixFaturaSaaS = async (faturaId) => {
   const expiraEmISO = expiraEm.toISOString();
 
   // Se estiver em ambiente de teste ou não há token do MP configurado ou o token não é válido, usa gerador de Pix EMV local (Dev/Sandbox/Test)
-  if (process.env.NODE_ENV === 'test' || !token || (!token.startsWith('APP_USR-') && !token.startsWith('TEST-'))) {
+  if (simulationAllowed() && !token) {
     const copiaCola = gerarPixEMV({
       chave: 'financeiro@arenix.com.br',
       nome: 'Arenix SaaS Master',
@@ -102,7 +104,7 @@ const gerarPixFaturaSaaS = async (faturaId) => {
     }) || `00020101021226580014BR.GOV.BCB.PIX0114financeiro@arenix520400005303986540${fatura.valor.toFixed(2)}5802BR5916Arenix SaaS6009SAO PAULO62070503***6304`;
 
     const gatewayRef = fatura.gateway_ref || `SIM_SAAS_FATURA_${fatura.id}_${Date.now()}`;
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(copiaCola)}`;
+    const qrCodeUrl = await require('qrcode').toDataURL(copiaCola);
 
     await db.runAsync(`
       UPDATE FaturasSaaS
@@ -126,7 +128,8 @@ const gerarPixFaturaSaaS = async (faturaId) => {
   }
 
   // 4. Gerar novo QR Code Pix via API do Mercado Pago
-  const idempotencyKey = crypto.randomBytes(16).toString('hex');
+  if (!token) throw new Error('Gateway SaaS nao configurado.');
+  const idempotencyKey = 'saas-invoice-' + fatura.id + '-' + Math.round(fatura.valor * 100);
 
   const response = await fetch('https://api.mercadopago.com/v1/payments', {
     method: 'POST',
@@ -198,7 +201,7 @@ const gerarPixFaturaSaaS = async (faturaId) => {
  * @param {string} gatewayRef — ID do pagamento no Mercado Pago
  * @returns {Promise<{sucesso: boolean, mensagem: string, fatura_id?: number, arena_desbloqueada?: boolean}>}
  */
-const liquidarFaturaSaaS = async (gatewayRef) => {
+const liquidarFaturaSaaS = async (gatewayRef, payment) => db.transaction(async () => {
   const fatura = await db.getAsync(`
     SELECT f.*, a.status as arena_status, a.nome as arena_nome
     FROM FaturasSaaS f
@@ -218,6 +221,9 @@ const liquidarFaturaSaaS = async (gatewayRef) => {
     return { sucesso: true, mensagem: 'Fatura já estava paga.', fatura_id: fatura.id, arena_desbloqueada: false };
   }
 
+  const {cents,httpError}=require('../utils/security');
+  if (!payment && !simulationAllowed()) throw httpError(403,'Confirmacao do provedor obrigatoria.');
+  if(payment && (String(payment.id)!==String(gatewayRef) || payment.status!=='approved' || payment.currency_id!=='BRL' || cents(payment.transaction_amount)!==cents(fatura.valor))) throw httpError(400,'Pagamento divergente da fatura.');
   const hoje = new Date().toISOString().split('T')[0];
 
   // Marcar fatura como Paga
@@ -230,7 +236,8 @@ const liquidarFaturaSaaS = async (gatewayRef) => {
   let arenaDesbloqueada = false;
 
   // Auto-desbloqueio: se arena estava suspensa por inadimplência → reativar
-  if (fatura.arena_status === 0) {
+  const overdue=await db.getAsync("SELECT COUNT(*) AS total FROM FaturasSaaS WHERE tenant_id=? AND id!=? AND status!='Paga' AND data_vencimento<?",[fatura.tenant_id,fatura.id,hoje]);
+  if (fatura.arena_status === 0 && !overdue.total) {
     await db.runAsync('UPDATE Arenas SET status = 1 WHERE id = ?', [fatura.tenant_id]);
     arenaDesbloqueada = true;
     console.log(`[SaaS Billing] Arena '${fatura.arena_nome}' (ID: ${fatura.tenant_id}) reativada após pagamento da Fatura #${fatura.id}.`);
@@ -259,7 +266,7 @@ const liquidarFaturaSaaS = async (gatewayRef) => {
     arena_desbloqueada: arenaDesbloqueada,
     plano_atualizado: planoAtualizado,
   };
-};
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. ENVIAR AVISOS DE VENCIMENTO (CRON DIÁRIO)

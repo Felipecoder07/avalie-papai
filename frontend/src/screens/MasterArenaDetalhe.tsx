@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Ban, CheckCircle, Pencil, Trash2, ShieldAlert, FileText, Wallet, Users, History, ArrowLeft } from 'lucide-react';

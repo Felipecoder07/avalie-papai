@@ -1,15 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const { login, logout, register, forgotPassword, resetPassword } = require('../controllers/authController');
-const { loginLimiter } = require('../middlewares/rateLimiter');
+const { loginLimiter, recoveryLimiter } = require('../middlewares/rateLimiter');
 const { verifyToken } = require('../middlewares/auth');
 const db = require('../config/database');
 
 router.post('/login', loginLimiter, login);
-router.post('/register', register);
+router.post('/register', recoveryLimiter, register);
 router.post('/logout', verifyToken, logout);
-router.post('/forgot-password', forgotPassword);
-router.post('/reset-password', resetPassword);
+router.post('/forgot-password', recoveryLimiter, forgotPassword);
+router.post('/reset-password', recoveryLimiter, resetPassword);
 
 // Rota pública para obter planos na Landing Page
 router.get('/planos', async (req, res) => {
@@ -89,4 +89,6 @@ router.get('/comunicados/ativos', verifyToken, async (req, res) => {
   }
 });
 
+router.post('/mfa/setup', verifyToken, recoveryLimiter, require('../middlewares/mfa').setup);
+router.post('/mfa/confirm', verifyToken, recoveryLimiter, require('../middlewares/mfa').confirm);
 module.exports = router;

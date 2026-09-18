@@ -86,20 +86,16 @@ const uploadFotoCapa = async (req, res) => {
   }
 
   try {
-    const matches = image.match(/^data:image\/([a-zA-Z0-9-+]+);base64,(.+)$/);
-    let ext = 'jpg';
-    let buffer;
-
-    if (matches && matches.length === 3) {
-      ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
-      buffer = Buffer.from(matches[2], 'base64');
-    } else {
-      buffer = Buffer.from(image, 'base64');
-    }
-
-    if (buffer.length > 5 * 1024 * 1024) {
-      return res.status(400).json({ error: 'A imagem deve ter no máximo 5MB.' });
-    }
+    const matches = typeof image === 'string' && /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(image);
+    if (!matches) return res.status(400).json({error:'Formato permitido: PNG, JPEG ou WebP.'});
+    const source = Buffer.from(matches[2], 'base64');
+    if (source.length > 5*1024*1024) return res.status(413).json({error:'Imagem excede 5 MB.'});
+    const sharp=require('sharp');
+    const decoder=sharp(source,{limitInputPixels:16000000,animated:false});
+    const metadata=await decoder.metadata();
+    if(metadata.format!==matches[1] || !metadata.width || !metadata.height) return res.status(400).json({error:'Conteudo de imagem invalido.'});
+    const buffer=await decoder.rotate().resize({width:2400,height:2400,fit:'inside',withoutEnlargement:true}).webp({quality:85}).toBuffer();
+    const ext='webp';
 
     const uploadsDir = path.join(__dirname, '../../uploads');
     if (!fs.existsSync(uploadsDir)) {
@@ -108,7 +104,7 @@ const uploadFotoCapa = async (req, res) => {
 
     const fileName = `arena_capa_${tenant_id}_${Date.now()}.${ext}`;
     const filePath = path.join(uploadsDir, fileName);
-    fs.writeFileSync(filePath, buffer);
+    await fs.promises.writeFile(filePath, buffer, {flag:'wx'});
 
     const relativeUrl = `/uploads/${fileName}`;
     res.json({
@@ -117,7 +113,7 @@ const uploadFotoCapa = async (req, res) => {
     });
   } catch (error) {
     console.error('Erro no upload da foto de capa:', error);
-    res.status(500).json({ error: 'Erro ao processar o upload da imagem.' });
+    res.status(400).json({ error: 'Imagem invalida ou impossivel de processar.' });
   }
 };
 

@@ -59,13 +59,16 @@ async function validateAndConsumeOAuthState(state, expectedTenantId = null, db =
     return { valid: false, status: 400, error: 'Este link de autorização já foi utilizado.' };
   }
 
-  if (new Date(row.expira_em) < new Date()) {
+  if (!Number.isFinite(Date.parse(row.expira_em)) || Date.parse(row.expira_em) <= Date.now()) {
     return { valid: false, status: 400, error: 'Autorização expirada. Inicie uma nova conexão.' };
   }
 
   if (expectedTenantId !== null && Number(row.tenant_id) !== Number(expectedTenantId)) {
     return { valid: false, status: 403, error: 'Acesso negado. A conexão não pertence à sua arena.' };
   }
+
+  const user=await db.getAsync('SELECT perfil,ativo,tenant_id FROM Usuarios WHERE id=?',[row.usuario_id]);
+  if(!user||user.ativo!==1||Number(user.tenant_id)!==Number(row.tenant_id)||!['Administrador','Gerente'].includes(user.perfil)) return {valid:false,status:403,error:'Permissao de conexao revogada.'};
 
   // Atualização atômica anti-race condition
   const result = await db.runAsync(

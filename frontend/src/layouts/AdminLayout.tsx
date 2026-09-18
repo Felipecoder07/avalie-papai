@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import { AdminTopbar } from '../components/AdminTopbar';

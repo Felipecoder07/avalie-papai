@@ -1,3 +1,4 @@
+import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, ArrowRight, X, Phone, User, KeyRound, CheckCircle2 } from 'lucide-react';
 import type { ArenaInfo } from '../types';
@@ -14,30 +15,11 @@ interface Props {
   onClose?: () => void;
 }
 
-interface GoogleTokenResponse {
-  access_token?: string;
-  [key: string]: unknown;
-}
-
-interface GoogleTokenClient {
-  requestAccessToken: (options?: { prompt?: string }) => void;
-}
-
 declare global {
-  interface Window {
-    google?: {
-      accounts?: {
-        oauth2?: {
-          initTokenClient: (config: {
-            client_id: string;
-            scope: string;
-            callback: (response: GoogleTokenResponse) => void | Promise<void>;
-            error_callback?: (error: unknown) => void;
-          }) => GoogleTokenClient;
-        };
-      };
-    };
-  }
+ interface Window { google?: { accounts?: { id?: {
+ initialize: (config:{client_id:string;callback:(response:{credential:string})=>void})=>void;
+ prompt: ()=>void;
+ } } } }
 }
 
 export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly<Props>) {
@@ -61,103 +43,21 @@ export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Abertura da Pop-up Oficial do Google via Google OAuth2 tokenClient
   const handleGoogleClick = () => {
+    const identity=window.google?.accounts?.id;
+    if(!identity || !GOOGLE_CLIENT_ID) { setError('Login Google indisponivel. Use e-mail e senha.'); return; }
     setError(null);
-    setSuccessMsg(null);
-    setLoading('google');
-
-    if (window.google?.accounts?.oauth2 && GOOGLE_CLIENT_ID) {
+    identity.initialize({client_id:GOOGLE_CLIENT_ID,callback: async ({credential})=>{
+      setLoading('google');
       try {
-        const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: GOOGLE_CLIENT_ID,
-          scope: 'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
-          callback: async (tokenResponse: GoogleTokenResponse) => {
-            if (tokenResponse && tokenResponse.access_token) {
-              try {
-                const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                  headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
-                });
-                const googleUserInfo = await userRes.json();
-
-                if (googleUserInfo.email) {
-                  const res = await fetch(`${BACKEND_URL}/api/public/tenant/${slug}/google`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      email: googleUserInfo.email,
-                      nome: googleUserInfo.name || googleUserInfo.given_name || googleUserInfo.email.split('@')[0],
-                      foto: googleUserInfo.picture
-                    })
-                  });
-
-                  const data = await res.json();
-                  if (res.ok && data.usuario) {
-                    if (data.token) localStorage.setItem('atleta_token', data.token);
-                    onAuthed({
-                      name: data.usuario.nome,
-                      email: data.usuario.email,
-                      phone: data.usuario.telefone || '(11) 99999-8888',
-                      token: data.token
-                    });
-                    return;
-                  } else {
-                    setError(data.error || 'Erro ao autenticar com o Google.');
-                  }
-                }
-              } catch (errApi) {
-                console.error('Erro na API do Google UserInfo:', errApi);
-                setError('Falha ao obter dados da conta Google.');
-              }
-            }
-            setLoading(null);
-          },
-          error_callback: (err: unknown) => {
-            console.error('Google OAuth Error Callback:', err);
-            setLoading(null);
-          }
-        });
-
-        client.requestAccessToken({ prompt: 'select_account' });
-        return;
-      } catch (eToken) {
-        console.error('Erro ao inicializar TokenClient do Google:', eToken);
-      }
-    }
-
-    triggerMockGoogle();
-  };
-
-  const triggerMockGoogle = async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/public/tenant/${slug}/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: 'atleta_google@gmail.com',
-          nome: 'Atleta Google Official',
-          telefone: '(11) 99999-8888'
-        })
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.usuario) {
-        if (data.token) localStorage.setItem('atleta_token', data.token);
-        onAuthed({
-          name: data.usuario.nome,
-          email: data.usuario.email,
-          phone: data.usuario.telefone || '(11) 99999-8888',
-          token: data.token
-        });
-      } else {
-        setError(data.error || 'Erro ao autenticar com o Google.');
-      }
-    } catch {
-      setError('Falha de conexão com o servidor.');
-    } finally {
-      setLoading(null);
-    }
+        const res=await fetch(BACKEND_URL+'/api/public/tenant/'+slug+'/google',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential,senha:password||undefined})});
+        const data=await res.json();
+        if(!res.ok) {setError(data.error || 'Falha na identidade Google.');return;}
+        localStorage.setItem('atleta_token','session');
+        onAuthed({name:data.usuario.nome,email:data.usuario.email,phone:data.usuario.telefone||'',token:'session'});
+      } catch {setError('Falha de conexao.');} finally {setLoading(null);}
+    }});
+    identity.prompt();
   };
 
   const handleForgotSubmit = async () => {

@@ -1,13 +1,15 @@
-const staffProfiles = new Set(['Administrador', 'Gerente', 'Recepcionista', 'Colaborador']);
+const staffProfiles = new Set(['Administrador', 'Gerente', 'Recepcionista']);
 
 function validId(value) {
   return (typeof value === 'number' || typeof value === 'string')
     && Number.isSafeInteger(Number(value)) && Number(value) > 0;
 }
 
-function assertReservationAccess(user, reserva) {
-  if (user?.perfil === 'SuperAdmin') return;
-
+async function assertReservationAccess(user, reserva) {
+  if(user?.perfil==='Cliente') {
+    const member=await require('../services/clientAccessService').membership(user,reserva.tenant_id,false);
+    user={...user,tenant_id:member?.tenant_id,cliente_id:member?.id};
+  }
   const sameArena = validId(user?.tenant_id) && validId(reserva.tenant_id)
     && Number(user.tenant_id) === Number(reserva.tenant_id);
   const isOwner = user?.perfil === 'Cliente' && validId(user.cliente_id)

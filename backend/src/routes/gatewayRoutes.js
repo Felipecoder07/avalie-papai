@@ -1,3 +1,5 @@
+const {fetch}=require('../utils/providerHttp');
+const {decrypt,encrypt,frontendUrl:configuredFrontend,simulationAllowed,cents}=require('../utils/security');
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middlewares/auth');
@@ -17,7 +19,7 @@ async function validarReservaECalcularValorCobrar(reserva_id, user, valorParam) 
     throw { status: 404, message: 'Reserva não encontrada.' };
   }
 
-  assertReservationAccess(user, reserva);
+  await assertReservationAccess(user, reserva);
 
   if (reserva.status === 'Cancelada') {
     throw { status: 400, message: 'Não é possível pagar por uma reserva que já está cancelada.' };
@@ -32,6 +34,7 @@ async function validarReservaECalcularValorCobrar(reserva_id, user, valorParam) 
   }
 
   let valorCobrar = saldoRestante;
+  if(valorParam!==undefined && valorParam!==null) cents(valorParam);
   if (valorParam !== undefined && valorParam !== null && Number.parseFloat(valorParam) > 0) {
     const valorCustom = Number.parseFloat(valorParam);
     if (valorCustom > saldoRestante + 0.01) {
@@ -101,7 +104,7 @@ router.get('/status/:reserva_id', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Reserva não encontrada.' });
     }
 
-    assertReservationAccess(req.user, reserva);
+    await assertReservationAccess(req.user, reserva);
 
     res.json({
       status: reserva.status,
@@ -116,7 +119,7 @@ router.get('/status/:reserva_id', verifyToken, async (req, res) => {
 
 // Simular pagamento (Útil apenas para desenvolvimento/testes e demonstração)
 router.post('/simular-pagamento', verifyToken, async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
+  if (!simulationAllowed()) {
     return res.status(403).json({ error: 'A simulação de pagamentos está desabilitada em ambiente de produção.' });
   }
 
@@ -131,7 +134,7 @@ router.post('/simular-pagamento', verifyToken, async (req, res) => {
       JOIN TransacoesGateway t ON t.reserva_id = r.id WHERE t.gateway_ref = ?
     `, [gateway_ref]);
     if (!reserva) return res.status(404).json({ error: 'Transação não encontrada.' });
-    assertReservationAccess(req.user, reserva);
+    await assertReservationAccess(req.user, reserva);
 
     const payload = {};
     if (device_id !== undefined) payload.device_id = device_id;
@@ -182,7 +185,7 @@ router.post('/maquineta', verifyToken, requireGatewayManager, async (req, res) =
         gateway_public_key = CASE WHEN ? THEN ? ELSE gateway_public_key END
        WHERE id = ?`,
       [gateway_device_id !== undefined, gateway_device_id?.trim() || null,
-        gateway_access_token?.trim() || null,
+        gateway_access_token?.trim() ? encrypt(gateway_access_token.trim()) : null,
         gateway_public_key !== undefined, gateway_public_key?.trim() || null, req.user.tenant_id]
     );
 
@@ -201,7 +204,7 @@ async function resolverTokenWebhookMercadoPago(paymentId) {
     if (reserva?.tenant_id) {
       const arena = await db.getAsync('SELECT gateway_access_token FROM Arenas WHERE id = ?', [reserva.tenant_id]);
       if (arena?.gateway_access_token?.trim()) {
-        token = arena.gateway_access_token.trim();
+        token = decrypt(arena.gateway_access_token.trim());
       }
     }
   }
@@ -219,6 +222,7 @@ async function liquidarWebhookMercadoPago(paymentId, token) {
   });
   if (mpRes.ok) {
     const mpData = await mpRes.json();
+    if (['refunded','charged_back'].includes(mpData.status) || Number(mpData.transaction_amount_refunded)>0) { await require('../services/paymentLedgerService').reverse(safePaymentId,mpData.transaction_amount_refunded || mpData.transaction_amount); return; }
     if (mpData.status === 'approved') {
       const payload = {};
       if (mpData.pos_id) payload.device_id = mpData.pos_id;
@@ -231,6 +235,7 @@ async function liquidarWebhookMercadoPago(paymentId, token) {
 // Webhook oficial (Chamado pelo Mercado Pago ou provedor configurado)
 router.post('/webhook', async (req, res) => {
   try {
+    if(!await require('../utils/mpWebhook').validateWebhook(req)) return res.status(403).json({error:'Assinatura invalida.'});
     const { action, data } = req.body;
     const isPaymentEvent = action === 'payment.created' || action === 'payment.updated' || req.query.topic === 'payment' || req.query.type === 'payment';
 
@@ -245,7 +250,7 @@ router.post('/webhook', async (req, res) => {
     res.status(200).send('OK');
   } catch (error) {
     console.error('[Gateway Webhook Error]', error.message);
-    res.status(200).send('OK');
+    res.status(503).send('Retry');
   }
 });
 
@@ -258,7 +263,7 @@ async function getSaaSGatewayCredentials() {
     if (idRow && idRow.valor) clientId = idRow.valor;
 
     const secretRow = await db.getAsync("SELECT valor FROM ConfiguracoesSaaS WHERE chave = 'mp_client_secret'");
-    if (secretRow && secretRow.valor) clientSecret = secretRow.valor;
+    if (secretRow && secretRow.valor) clientSecret = decrypt(secretRow.valor);
   } catch (e) {
     console.error('Erro ao ler credenciais do banco:', e);
   }
@@ -297,7 +302,7 @@ router.get('/oauth/url', verifyToken, requireGatewayManager, async (req, res) =>
 
 // OAuth: Callback que recebe o código e troca pelo Access Token da Arena
 router.get('/oauth/callback', async (req, res) => {
-  const frontendUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:5173';
+  const frontendUrl = configuredFrontend();
   try {
     const { code, state, error } = req.query;
 
@@ -347,7 +352,7 @@ router.get('/oauth/callback', async (req, res) => {
             UPDATE Arenas
             SET gateway_access_token = ?, gateway_public_key = ?
             WHERE id = ?
-          `, [accessToken, publicKey, tenantId]);
+          `, [encrypt(accessToken), publicKey, tenantId]);
           return res.redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=success`);
         }
       } else {
@@ -417,7 +422,7 @@ router.post('/oauth/exchange', verifyToken, requireGatewayManager, async (req, r
           UPDATE Arenas
           SET gateway_access_token = ?, gateway_public_key = ?
           WHERE id = ?
-        `, [accessToken, publicKey, tenantId]);
+        `, [encrypt(accessToken), publicKey, tenantId]);
 
         return res.json({ message: 'Conta Mercado Pago conectada com sucesso!', gateway_connected: true, publicKey });
       }

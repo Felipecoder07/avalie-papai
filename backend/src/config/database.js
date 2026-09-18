@@ -9,7 +9,7 @@ if (!fs.existsSync(dataDir)) {
 
 const isTest = process.env.NODE_ENV === 'test';
 const dbFile = isTest ? 'courtmanager_test.sqlite' : 'courtmanager.sqlite';
-const dbPath = path.resolve(__dirname, '../../data', dbFile);
+const dbPath = isTest && process.env.TEST_DB_PATH ? process.env.TEST_DB_PATH : path.resolve(__dirname, '../../data', dbFile);
 
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
@@ -49,4 +49,6 @@ db.runAsync = function (sql, params = []) {
   });
 };
 
+db.configure('busyTimeout', 5000);
+require('../utils/transactions').installTransactions(db);
 module.exports = db;
