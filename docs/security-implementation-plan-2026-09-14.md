@@ -1,24 +1,24 @@
 # Plano de implementação de segurança — Arenix
 
-Data do plano: 14/09/2026. Atualização de status: 17/09/2026. Status: implementação local parcial; publicação e homologação em produção não confirmadas.
+Data do plano: 14/09/2026. Atualização de status: 18/09/2026. Status: bloco 0 concluído localmente; demais blocos parciais; publicação e homologação em produção não confirmadas.
 
 Base: [auditoria](security-review-2026-09-13.md) e [evidências locais](security-audit-evidence.json). O objetivo é eliminar as falhas demonstradas, tratar os riscos adicionais e estabelecer critérios verificáveis para publicação. Concluir este plano não equivale a garantir ausência absoluta de vulnerabilidades.
 
-Marcação: `[x]` indica implementação conferida no código local; `[ ]` indica item pendente, parcialmente implementado ou sem comprovação suficiente. Tarefas com vários requisitos permanecem abertas enquanto houver parte não concluída. Referência do código conferido: commit `a5d8963` (`feat(security): blindagem multitenant, sessoes httponly/csrf, ledger financeiro e mfa`). Apenas esta atualização documental está sem commit; nenhuma etapa inteira foi considerada encerrada.
+Marcação: `[x]` indica implementação conferida no código local; `[ ]` indica item pendente, parcialmente implementado ou sem comprovação suficiente. Tarefas com vários requisitos permanecem abertas enquanto houver parte não concluída. A remediação anterior está no commit `a5d8963`; a execução do bloco 0 partiu do working tree limpo na revisão `ce9f8b50c5bf347b449c21874198292705eecd56`. Evidências e limites estão no [registro do bloco 0](security-block-0-2026-09-18.md).
 
-Validação disponível: `npm.cmd test -- tests/security_remediation.test.js`, executado em `backend` nesta conferência, passou com 12 testes, usando SQLite `:memory:` e as rotas de `app.js`. A suíte verifica autorização, revogação/CSRF, propriedade, liquidação concorrente, pagamento parcial, recuperação e rejeição de upload ativo. Não substitui os testes completos, E2E, cenários de produção ou homologação no provedor.
+Validação do bloco 0: `npm.cmd run test:security`, executado em `backend`, passou com **100 testes em 6 arquivos**, incluindo SQLite `:memory:`, rotas de `app.js`, webhook HTTP concorrente com assinatura e testes em navegador headless. A execução geral do backend ainda apresenta falhas nas demais suítes, registradas no relatório do bloco; estes resultados não substituem homologação completa ou validação no provedor/deploy.
 
 ## Evidências e pendências da atualização
 
 | Área | Evidência local e limite da conclusão |
 | --- | --- |
-| Rotas e permissões | `app.js`, `server.js`, `permissions.js`, `usuariosController.js` e rotas administrativas restringem perfis e centralizam a montagem da API. A política completa, o fluxo dedicado de troca de titular e a matriz integral de atores permanecem abertos. |
+| Rotas e permissões | `app.js`, `server.js`, `permissions.js`, `usuariosController.js` e rotas administrativas restringem perfis e centralizam a montagem da API. A matriz do bloco 0 cobre atores, arenas e contas ativas/bloqueadas/excluídas. A política completa e o fluxo dedicado de troca de titular permanecem abertos. |
 | Google | `LoginScreen.tsx` envia ID token; `athleteAuthController.js` usa `verifyIdToken` e vincula pelo subject, exigindo senha para uma conta existente. O caminho antigo sem prova foi substituído; a interface informa indisponibilidade quando não configurado. Login real Google ainda requer homologação. |
 | Sessões e recuperação | `sessionService.js`, `recoveryService.js` e os clientes `apiFetch.ts` implementam cookies, CSRF, hashes, expiração e revogação. O snapshot de senha/perfil/tenant invalida sessões após mudanças. Topologia publicada e consolidação dos marcadores de interface ainda precisam de conclusão. |
 | Clientes e visitantes | `clientAccessService.js` e `securitySchema.js` criam vínculos explícitos e credenciais limitadas de visitante. A associação automática por e-mail continua em `membership` e na migração v2: a prova de identidade para vincular cadastros permanece pendente. |
 | Reservas | `bookingService.js` valida arena/quadra, horários, funcionamento, bloqueios e conflitos, inclusive em transação. Validação de esporte, unidade de preço e todos os requisitos de desconto ainda não têm encerramento comprovado. |
-| Financeiro | `paymentLedgerService.js`, `securitySchema.js` e `transactions.js` implementam crédito único, alocação e recálculo transacional. Intenções e estornos têm implementação parcial; conta/moeda, reconciliação periódica, falhas e eventos fora de ordem ainda exigem validação/conclusão. Os testes concorrentes executados chamam a liquidação diretamente, não o webhook HTTP completo. |
-| Arquivos e navegador | `arenasController.js` recodifica imagens com `sharp`; `app.js` restringe arquivos servidos e aplica `helmet`. Foi adotada a proteção provisória de mídia na mesma origem. CSP, limites e configuração têm código, mas os requisitos completos e a infraestrutura ainda precisam de validação. |
+| Financeiro | `paymentLedgerService.js`, `securitySchema.js` e `transactions.js` implementam crédito único, alocação e recálculo transacional. O bloco 0 valida cinco webhooks HTTP simultâneos e pagamento parcial no grupo. Conta/moeda, reconciliação periódica e todos os cenários de falha/eventos fora de ordem ainda exigem conclusão. |
+| Arquivos e navegador | `arenasController.js` recodifica imagens com `sharp`; `app.js` restringe arquivos servidos e aplica `helmet`. O bloco 0 testa XSS no cadastro renderizado, rejeição de upload HTML e bloqueio de HTML existente em `/uploads`, usando navegador real. CSP, limites, demais destinos de HTML e infraestrutura ainda precisam de validação completa. |
 | QR Pix | O backend gera QR localmente, mas `AdminAssinatura.tsx` ainda tem fallback para `api.qrserver.com`; a tarefa permanece aberta. |
 | Migração e entrega | `securitySchema.js` ainda contém tratamento por ID fixo e associação por e-mail na migração v2. Auditoria de dependências, conciliação histórica, backup/restauração, homologação e publicação não foram comprovados. |
 
@@ -39,17 +39,19 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 
 ## 0. Preparar uma base de validação confiável
 
-- [ ] Preservar o working tree existente e registrar a revisão exata avaliada; separar os commits da remediação das alterações já presentes.
+- [x] Preservar o working tree existente e registrar a revisão exata avaliada; separar os commits da remediação das alterações já presentes.
 - [x] Centralizar todas as rotas em `app.js` ou em um registrador único usado pelo app. `server.js` deve inicializar infraestrutura/jobs e escutar a porta, sem registrar outra versão das rotas.
-- [ ] Transformar as reproduções da auditoria em testes de regressão com expectativas seguras: rejeição de ações indevidas, ausência de dados sensíveis e conferência das alterações no banco.
+- [x] Transformar as reproduções da auditoria em testes de regressão com expectativas seguras: rejeição de ações indevidas, ausência de dados sensíveis e conferência das alterações no banco.
 - [x] Manter as evidências originais como histórico. O script de auditoria atual registra vulnerabilidades; sua execução sem erro não será critério de aprovação.
-- [ ] Usar banco isolado por suíte; concorrência com SQLite real. Nunca executar fixtures de auditoria no banco de produção.
-- [ ] Criar matriz de atores: anônimo, Cliente proprietário, Cliente terceiro, Recepcionista, Gerente, Administrador e SuperAdmin; arena A e B; conta ativa, bloqueada e excluída.
+- [x] Usar banco isolado por suíte; concorrência com SQLite real. Nunca executar fixtures de auditoria no banco de produção.
+- [x] Criar matriz de atores: anônimo, Cliente proprietário, Cliente terceiro, Recepcionista, Gerente, Administrador e SuperAdmin; arena A e B; conta ativa, bloqueada e excluída.
 - [x] Incluir login real nas suítes de autorização, evitando depender exclusivamente de JWTs fabricados pelos testes.
 
 **Arquivos:** `backend/src/app.js`, `backend/src/server.js`, `backend/tests/security_concurrency.test.js`, `backend/tests/gateway.test.js` e novas suítes de autorização, identidade e pagamentos.
 
 **Aceite:** uma rota ausente gera falha de montagem, não aprovação de isolamento. Um teste de concorrência verifica número e soma de registros; o de logout reutiliza a credencial; XSS é testado em navegador.
+
+**Resultado em 18/09/2026:** concluído localmente, com 100 testes aprovados. [Registro, matriz e correspondência com a auditoria](security-block-0-2026-09-18.md). Os arquivos históricos da auditoria permanecem intactos. A suíte geral não está aprovada: sua atualização e as correções dos demais blocos continuam pendentes.
 
 ## 1. Fechar imediatamente os acessos críticos
 

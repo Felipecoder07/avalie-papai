@@ -1,34 +1,13 @@
-const request=require('supertest');
-const bcrypt=require('bcrypt');
-process.env.NODE_ENV='test';process.env.TEST_DB_PATH=':memory:';
-const db=require('../src/config/database');
-const email=require('../src/services/emailService');
-vi.spyOn(email,'sendEmail').mockResolvedValue(true);
-const app=require('../src/app');
-const {ensureSecuritySchema}=require('../src/config/securitySchema');
-const {settle,reverse}=require('../src/services/paymentLedgerService');
-let cookies,csrf,passwordHash;
-async function login(id=1){
- const result=await request(app).post('/api/auth/login').send({email:'u'+id+'@example.test',senha:'SecureTest123!'});
- expect(result.status).toBe(200);
- const pairs=result.headers['set-cookie'].map(v=>v.split(';')[0]);
- return {cookie:pairs.join('; '),csrf:pairs.find(v=>v.startsWith('cm_csrf=')).split('=')[1]};
-}
-const auth=(req,session)=>req.set('Cookie',session.cookie).set('x-csrf-token',session.csrf);
-beforeAll(async()=>{
- require('../src/config/init_db')();await new Promise(r=>setTimeout(r,500));await ensureSecuritySchema(db);
- passwordHash=await bcrypt.hash('SecureTest123!',4);
-});
-beforeEach(async()=>{
- for(const table of ['PaymentAllocations','GatewayCredits','RefundIntents','SecurityOutbox','PaymentIntents','AuthSessions','RecoveryChallenges','ExternalIdentities','ClientMemberships','GuestAccess','TransacoesGateway','Pagamentos','Reservas','Quadras','Clientes','Usuarios','Arenas']) await db.runAsync('DELETE FROM '+table);
- await db.runAsync("INSERT OR REPLACE INTO ConfiguracoesSaaS(chave,valor) VALUES('manutencao_ativa','0')");
- await db.runAsync("INSERT INTO Arenas(id,nome,slug,status,chave_pix) VALUES(1,'Arena A','arena-a',1,'pix@example.test'),(2,'Arena B','arena-b',1,NULL)");
- await db.runAsync("INSERT INTO Clientes(id,tenant_id,nome,email,cpf) VALUES(1,1,'Owner','owner@example.test','11111111111'),(2,1,'Third','third@example.test','22222222222'),(3,2,'Foreign','foreign@example.test','33333333333')");
- for(const [id,role,tenant,client] of [[1,'Administrador',1,null],[2,'Cliente',1,1],[3,'Cliente',1,2],[4,'Administrador',2,null],[5,'SuperAdmin',null,null],[6,'Gerente',1,null],[7,'Recepcionista',1,null]]) await db.runAsync('INSERT INTO Usuarios(id,tenant_id,cliente_id,nome,email,perfil,senha_hash,ativo) VALUES(?,?,?,?,?,?,?,1)',[id,tenant,client,'User'+id,'u'+id+'@example.test',role,passwordHash]);
- await db.runAsync("INSERT INTO Quadras(id,tenant_id,nome,preco_base,status) VALUES(1,1,'Court',100,'Ativa')");
- await db.runAsync("INSERT INTO Reservas(id,tenant_id,cliente_id,quadra_id,data_reserva,hora_inicio,hora_fim,valor_total,status,status_pagamento,grupo_id) VALUES(1,1,1,1,'2099-12-01','10:00','11:00',100,'Pendente','Pendente','group1'),(2,1,1,1,'2099-12-01','11:00','12:00',100,'Pendente','Pendente','group1')");
-});
-afterAll(()=>new Promise(resolve=>db.close(resolve)));
+const request = require('supertest');
+const fixture = require('./helpers/securityFixture.cjs');
+const { db, auth } = fixture;
+vi.spyOn(require('../src/services/emailService'), 'sendEmail').mockResolvedValue(true);
+const app = require('../src/app');
+const { settle, reverse } = require('../src/services/paymentLedgerService');
+const login = id => fixture.login(app, id);
+beforeAll(fixture.initialize);
+beforeEach(fixture.seed);
+afterAll(fixture.close);
 it('real login issues HttpOnly cookie; CSRF and logout revoke access',async()=>{
  const session=await login();
  expect((await auth(request(app).get('/api/clientes'),session)).status).toBe(200);
@@ -48,12 +27,17 @@ it('tenant administrator cannot promote self or create master',async()=>{
  expect((await auth(request(app).post('/api/usuarios'),session).send({nome:'User',email:'new@example.test',perfil:'SuperAdmin'})).status).toBe(403);
  expect((await auth(request(app).get('/api/saas/configuracoes'),session)).status).toBe(403);
  expect((await db.getAsync('SELECT perfil FROM Usuarios WHERE id=1')).perfil).toBe('Administrador');
+ expect(await db.getAsync("SELECT COUNT(*) AS count FROM Usuarios WHERE email='new@example.test'")).toEqual({count:0});
+ const relogin = await login();
+ expect((await auth(request(app).get('/api/saas/arenas'),relogin)).status).toBe(403);
 });
 it('client cannot access staff finances or forge manual payment',async()=>{
  const session=await login(2);
  for(const route of ['/api/clientes','/api/pagamentos/reservas','/api/pagamentos/resumo','/api/reservas/grade?data=2099-12-01']) expect((await auth(request(app).get(route),session)).status).toBe(403);
  expect((await auth(request(app).post('/api/pagamentos'),session).send({reserva_id:1,valor:100,metodo:'Pix Online'})).status).toBe(403);
  expect((await db.getAsync('SELECT COUNT(*) AS n FROM Pagamentos')).n).toBe(0);
+ expect((await db.getAsync('SELECT status_pagamento FROM Reservas WHERE id=1')).status_pagamento).toBe('Pendente');
+ expect(globalThis.fetch).not.toHaveBeenCalled();
 });
 it('anonymous history, wrong owner and wrong slug do not expose reservations',async()=>{
  expect((await request(app).get('/api/public/tenant/arena-a/minhas-reservas?telefone=111')).status).toBe(401);

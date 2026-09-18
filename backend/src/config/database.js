@@ -2,14 +2,16 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require("node:path");
 const fs = require("node:fs");
 
-const dataDir = path.resolve(__dirname, '../../data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
 const isTest = process.env.NODE_ENV === 'test';
-const dbFile = isTest ? 'courtmanager_test.sqlite' : 'courtmanager.sqlite';
-const dbPath = isTest && process.env.TEST_DB_PATH ? process.env.TEST_DB_PATH : path.resolve(__dirname, '../../data', dbFile);
+// Test fixtures must never open a persistent application database, even when
+// TEST_DB_PATH was inherited from a developer's shell or a CI configuration.
+if (process.env.VITEST && !isTest) throw new Error('Initialize the test database before switching environment branches.');
+if (isTest && process.env.TEST_DB_PATH && process.env.TEST_DB_PATH !== ':memory:') {
+  throw new Error('Test databases must use SQLite :memory:. Persistent TEST_DB_PATH is forbidden.');
+}
+const dataDir = path.resolve(__dirname, '../../data');
+if (!isTest && !fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+const dbPath = isTest ? ':memory:' : path.join(dataDir, 'courtmanager.sqlite');
 
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {

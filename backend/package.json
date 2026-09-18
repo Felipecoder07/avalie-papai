@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch-path=src src/server.js",
-    "test": "vitest run --globals --pool=forks --no-file-parallelism"
+    "test": "vitest run --globals --pool=forks --no-file-parallelism",
+    "test:security": "vitest run tests/security_remediation.test.js tests/security_audit_regression.test.js tests/security_concurrency.test.js tests/security_database.test.js tests/gateway.test.js tests/security_browser.test.js",
+    "test:security:browser": "vitest run tests/security_browser.test.js"
   },
   "keywords": [],
   "author": "",
@@ -28,6 +30,7 @@
     "sqlite3": "^6.0.1"
   },
   "devDependencies": {
+    "playwright": "^1.63.0",
     "supertest": "^7.2.2",
     "vitest": "^4.1.10"
   }
