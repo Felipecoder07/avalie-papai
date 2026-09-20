@@ -1,5 +1,6 @@
+const logger = require('../utils/safeLogger').forModule('saasBillingService');
 const {fetch} = require('../utils/providerHttp');
-const { decrypt, simulationAllowed } = require('../utils/security');
+const { decrypt, simulationAllowed, cents, httpError } = require('../utils/security');
 /**
  * saasBillingService.js
  * Serviço responsável por toda a lógica de cobrança de mensalidades do SaaS.
@@ -21,6 +22,14 @@ const logAuditEvent = require('../utils/auditLogger');
 const { gerarPixEMV } = require('../utils/pixPayload');
 const { sendEmail } = require('./emailService');
 
+function faturaValorCentavos(value) {
+  const amount = Number(value);
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    throw httpError(409, 'Valor da fatura inválido.');
+  }
+  return amount;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. OBTER ACCESS TOKEN DO MASTER
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,16 +40,7 @@ const { sendEmail } = require('./emailService');
  * É diferente do mp_client_id/secret (usados para OAuth dos tenants).
  * @returns {Promise<string|null>}
  */
-const getMasterAccessToken = async () => {
-  const row = await db.getAsync("SELECT valor FROM ConfiguracoesSaaS WHERE chave = 'mp_master_access_token'");
-  if (row && row.valor && row.valor.trim() !== '') {
-    return decrypt(row.valor.trim());
-  }
-  if (process.env.MERCADO_PAGO_ACCESS_TOKEN && process.env.MERCADO_PAGO_ACCESS_TOKEN.trim() !== '') {
-    return process.env.MERCADO_PAGO_ACCESS_TOKEN.trim();
-  }
-  return null;
-};
+const getMasterAccessToken = () => require('./credentialService').readCredential('mp_master_access_token');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. GERAR PIX DE FATURA DE MENSALIDADE
@@ -69,6 +69,8 @@ const gerarPixFaturaSaaS = async (faturaId) => {
   if (fatura.status === 'Paga') {
     throw new Error(`Fatura #${faturaId} já está paga.`);
   }
+  const valorCentavos = faturaValorCentavos(fatura.valor);
+  const valorReais = valorCentavos / 100;
 
   // 2. Reutilizar Pix existente se ainda válido (não expirado)
   if (fatura.gateway_ref && fatura.qr_expira_em) {
@@ -99,9 +101,9 @@ const gerarPixFaturaSaaS = async (faturaId) => {
       chave: 'financeiro@arenix.com.br',
       nome: 'Arenix SaaS Master',
       cidade: 'SAO PAULO',
-      valor: fatura.valor,
+      valor: valorReais,
       txid: `SAAS${fatura.id}`
-    }) || `00020101021226580014BR.GOV.BCB.PIX0114financeiro@arenix520400005303986540${fatura.valor.toFixed(2)}5802BR5916Arenix SaaS6009SAO PAULO62070503***6304`;
+    }) || `00020101021226580014BR.GOV.BCB.PIX0114financeiro@arenix520400005303986540${valorReais.toFixed(2)}5802BR5916Arenix SaaS6009SAO PAULO62070503***6304`;
 
     const gatewayRef = fatura.gateway_ref || `SIM_SAAS_FATURA_${fatura.id}_${Date.now()}`;
     const qrCodeUrl = await require('qrcode').toDataURL(copiaCola);
@@ -116,7 +118,7 @@ const gerarPixFaturaSaaS = async (faturaId) => {
     `, [gatewayRef, copiaCola, expiraEmISO, faturaId]);
 
     logAuditEvent(0, 'SaaS Billing: Pix Gerado (Dev/EMV)',
-      `Pix de R$${fatura.valor.toFixed(2)} gerado para Fatura #${faturaId} (Arena: ${fatura.arena_nome})`, '127.0.0.1');
+      `Pix de R$${valorReais.toFixed(2)} gerado para Fatura #${faturaId} (Arena: ${fatura.arena_nome})`, '127.0.0.1');
 
     return {
       qr_code: qrCodeUrl,
@@ -139,7 +141,7 @@ const gerarPixFaturaSaaS = async (faturaId) => {
       'X-Idempotency-Key': idempotencyKey,
     },
     body: JSON.stringify({
-      transaction_amount: Number.parseFloat(fatura.valor.toFixed(2)),
+      transaction_amount: Number.parseFloat(valorReais.toFixed(2)),
       description: `Mensalidade SaaS Arenix — ${fatura.arena_nome} (Fatura #${fatura.id})`,
       payment_method_id: 'pix',
       date_of_expiration: expiraEmISO,
@@ -158,11 +160,17 @@ const gerarPixFaturaSaaS = async (faturaId) => {
 
   if (!response.ok) {
     const errData = await response.json();
-    const detalhe = errData.message || (errData.cause?.[0]?.description) || 'Erro desconhecido';
+    const detalhe = 'O provedor não autorizou a cobrança.';
     throw new Error(`Mercado Pago: ${detalhe}`);
   }
 
   const mpData = await response.json();
+  // Keep the existing idempotency key so retries cannot create a second charge.
+  // If the provider returns a previous, wrong-unit payment for that key, stop
+  // and reconcile it instead of storing its reference as this invoice's payment.
+  if (!mpData.id || mpData.currency_id !== 'BRL' || cents(mpData.transaction_amount) !== valorCentavos) {
+    throw httpError(409, 'O provedor retornou uma cobrança divergente. Reconcilie a tentativa antes de cobrar novamente.');
+  }
   const gatewayRef = String(mpData.id);
   const copiaCola = mpData.point_of_interaction?.transaction_data?.qr_code || '';
   const qrCodeBase64 = mpData.point_of_interaction?.transaction_data?.qr_code_base64 || '';
@@ -178,7 +186,7 @@ const gerarPixFaturaSaaS = async (faturaId) => {
   `, [gatewayRef, copiaCola, expiraEmISO, faturaId]);
 
   logAuditEvent(0, 'SaaS Billing: Pix Gerado',
-    `Pix de R$${fatura.valor.toFixed(2)} gerado para Fatura #${faturaId} (Arena: ${fatura.arena_nome})`, '127.0.0.1');
+    `Pix de R$${valorReais.toFixed(2)} gerado para Fatura #${faturaId} (Arena: ${fatura.arena_nome})`, '127.0.0.1');
 
   return {
     qr_code: qrCodeBase64 ? `data:image/png;base64,${qrCodeBase64}` : null,
@@ -211,19 +219,19 @@ const liquidarFaturaSaaS = async (gatewayRef, payment) => db.transaction(async (
 
   if (!fatura) {
     const safeRef = String(gatewayRef || '').replace(/[\r\n]/g, '');
-    console.warn(`[SaaS Billing] Webhook recebido para gateway_ref desconhecido: ${safeRef}`);
+    logger.warn(`[SaaS Billing] Webhook recebido para gateway_ref desconhecido: ${safeRef}`);
     return { sucesso: false, mensagem: `Fatura com gateway_ref ${safeRef} não encontrada.` };
   }
 
   // IDEMPOTÊNCIA: já processado → não faz nada
   if (fatura.status === 'Paga') {
-    console.log(`[SaaS Billing] Fatura #${fatura.id} já estava paga. Webhook ignorado (idempotente).`);
+    logger.log(`[SaaS Billing] Fatura #${fatura.id} já estava paga. Webhook ignorado (idempotente).`);
     return { sucesso: true, mensagem: 'Fatura já estava paga.', fatura_id: fatura.id, arena_desbloqueada: false };
   }
 
-  const {cents,httpError}=require('../utils/security');
+  const valorCentavos = faturaValorCentavos(fatura.valor);
   if (!payment && !simulationAllowed()) throw httpError(403,'Confirmacao do provedor obrigatoria.');
-  if(payment && (String(payment.id)!==String(gatewayRef) || payment.status!=='approved' || payment.currency_id!=='BRL' || cents(payment.transaction_amount)!==cents(fatura.valor))) throw httpError(400,'Pagamento divergente da fatura.');
+  if(payment && (String(payment.id)!==String(gatewayRef) || payment.status!=='approved' || payment.currency_id!=='BRL' || cents(payment.transaction_amount)!==valorCentavos)) throw httpError(400,'Pagamento divergente da fatura.');
   const hoje = new Date().toISOString().split('T')[0];
 
   // Marcar fatura como Paga
@@ -240,7 +248,7 @@ const liquidarFaturaSaaS = async (gatewayRef, payment) => db.transaction(async (
   if (fatura.arena_status === 0 && !overdue.total) {
     await db.runAsync('UPDATE Arenas SET status = 1 WHERE id = ?', [fatura.tenant_id]);
     arenaDesbloqueada = true;
-    console.log(`[SaaS Billing] Arena '${fatura.arena_nome}' (ID: ${fatura.tenant_id}) reativada após pagamento da Fatura #${fatura.id}.`);
+    logger.log(`[SaaS Billing] Arena '${fatura.arena_nome}' (ID: ${fatura.tenant_id}) reativada após pagamento da Fatura #${fatura.id}.`);
   }
 
   // Auto-upgrade de plano e ciclo: se a fatura paga for de um novo plano/ciclo contratado → atualizar arena
@@ -250,7 +258,7 @@ const liquidarFaturaSaaS = async (gatewayRef, payment) => db.transaction(async (
   if (arenaAtual && (Number(arenaAtual.plano_id) !== Number(fatura.plano_id) || (arenaAtual.ciclo_cobranca || 'mensal') !== novoCiclo)) {
     await db.runAsync('UPDATE Arenas SET plano_id = ?, ciclo_cobranca = ? WHERE id = ?', [fatura.plano_id, novoCiclo, fatura.tenant_id]);
     planoAtualizado = true;
-    console.log(`[SaaS Billing] Arena '${fatura.arena_nome}' (ID: ${fatura.tenant_id}) atualizada para o Plano ID ${fatura.plano_id} (Ciclo: ${novoCiclo}) após pagamento da Fatura #${fatura.id}.`);
+    logger.log(`[SaaS Billing] Arena '${fatura.arena_nome}' (ID: ${fatura.tenant_id}) atualizada para o Plano ID ${fatura.plano_id} (Ciclo: ${novoCiclo}) após pagamento da Fatura #${fatura.id}.`);
   }
 
   logAuditEvent(0, 'SaaS Billing: Fatura Liquidada',
@@ -281,7 +289,7 @@ const formatarDataBR = (dataStr) => {
 
 const gerarHtmlAvisoVencimento = (fatura) => {
   const dataFormatada = formatarDataBR(fatura.data_vencimento);
-  const valorFormatado = Number(fatura.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const valorFormatado = (faturaValorCentavos(fatura.valor) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -355,8 +363,8 @@ const enviarAvisosVencimento = async () => {
     let enviadosCount = 0;
 
     for (const fatura of faturasProximas) {
-      console.log(
-        `[SaaS Billing] AVISO: Fatura #${fatura.id} de R$${Number(fatura.valor).toFixed(2)} ` +
+      logger.log(
+        `[SaaS Billing] AVISO: Fatura #${fatura.id} de R$${(faturaValorCentavos(fatura.valor) / 100).toFixed(2)} ` +
         `para '${fatura.arena_nome}' vence em ${fatura.data_vencimento}. E-mail: ${fatura.arena_email || 'Nenhum'}`
       );
 
@@ -379,7 +387,7 @@ const enviarAvisosVencimento = async () => {
 
     return { avisadas: faturasProximas.length, enviados: enviadosCount };
   } catch (err) {
-    console.error('[SaaS Billing] Erro ao enviar avisos de vencimento:', err);
+    logger.error('[SaaS Billing] Erro ao enviar avisos de vencimento:', err);
     return { avisadas: 0, enviados: 0 };
   }
 };

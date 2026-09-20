@@ -22,11 +22,9 @@ export function AdminLayout() {
       .catch(console.error);
 
     // 2. Busca comunicados e alertas da arena logada
-    const token = localStorage.getItem('courtmanager_token');
-    if (!token) return;
 
     fetch('/api/auth/comunicados/ativos', {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: {}
     })
       .then(r => r.json())
       .then(data => {

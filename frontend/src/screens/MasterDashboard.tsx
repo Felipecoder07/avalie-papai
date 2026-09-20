@@ -29,8 +29,7 @@ export function MasterDashboard({ onNavigate }: Readonly<Props>) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('courtmanager_token');
-    const headers = { 'Authorization': `Bearer ${token}` };
+    const headers = {};
 
     Promise.all([
       fetch('/api/saas/metrics', { headers }).then(r => r.json()),

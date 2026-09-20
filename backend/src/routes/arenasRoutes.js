@@ -1,11 +1,12 @@
+const { requirePermission } = require('../utils/permissions');
 const express = require('express');
 const router = express.Router();
 const arenasController = require('../controllers/arenasController');
-const { verifyToken, requireRole } = require('../middlewares/auth');
+const { verifyToken } = require('../middlewares/auth');
 
 // Rotas restritas para Administrador
 router.use(verifyToken);
-router.use(requireRole(['Administrador', 'Gerente']));
+router.use(requirePermission('arena.manage'));
 
 router.get('/minha', arenasController.getMinhaArena);
 router.put('/minha', arenasController.atualizarMinhaArena);

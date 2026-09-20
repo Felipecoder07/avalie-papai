@@ -1,4 +1,4 @@
-import { apiFetch as fetch } from './utils/apiFetch';
+import { apiFetch as fetch, logout } from './utils/apiFetch';
 import { useEffect, useMemo, useState } from 'react';
 import type { Court, Slot, ReservationInput, ArenaInfo } from './types';
 import ArenaHeader from './components/ArenaHeader';
@@ -28,13 +28,13 @@ function formatSingleSlotMessage(
   const sportName = s.sport || activeSport || courtObj?.modalities?.[0] || 'Esporte';
 
   const lines: string[] = [
-    `📅 *Data:* ${formatLongDate(s.dateISO)}`,
-    `⏰ *Horário:* ${s.start} às ${s.end}`,
-    `🏟️ *Quadra:* ${courtName}`,
-    `🎾 *Modalidade:* ${sportName}`
+    `ðŸ“… *Data:* ${formatLongDate(s.dateISO)}`,
+    `â° *HorÃ¡rio:* ${s.start} Ã s ${s.end}`,
+    `ðŸŸï¸ *Quadra:* ${courtName}`,
+    `ðŸŽ¾ *Modalidade:* ${sportName}`
   ];
   if (total > 0) {
-    lines.push(`💰 *Valor:* ${brl(total)}`);
+    lines.push(`ðŸ’° *Valor:* ${brl(total)}`);
   }
   return lines;
 }
@@ -50,19 +50,19 @@ function formatSameDateSlotsMessage(
   const dateStr = formatLongDate(sortedSlots[0].dateISO);
   const sportName = sortedSlots[0].sport || activeSport || firstCourt?.modalities?.[0] || 'Esporte';
 
-  const lines: string[] = [`📅 *Data:* ${dateStr}`];
+  const lines: string[] = [`ðŸ“… *Data:* ${dateStr}`];
   if (allSameCourt && firstCourt) {
-    lines.push(`🏟️ *Quadra:* ${firstCourt.name}`);
+    lines.push(`ðŸŸï¸ *Quadra:* ${firstCourt.name}`);
   }
-  lines.push(`🎾 *Modalidade:* ${sportName}`);
-  lines.push(`⏰ *Horários Selecionados (${sortedSlots.length}):*`);
+  lines.push(`ðŸŽ¾ *Modalidade:* ${sportName}`);
+  lines.push(`â° *HorÃ¡rios Selecionados (${sortedSlots.length}):*`);
   sortedSlots.forEach(s => {
     const courtObj = courtsList.find(c => c.id === s.courtId);
-    const courtSuffix = !allSameCourt && courtObj ? ` — ${courtObj.name}` : '';
-    lines.push(`  • ${s.start} às ${s.end}${courtSuffix}`);
+    const courtSuffix = !allSameCourt && courtObj ? ` â€” ${courtObj.name}` : '';
+    lines.push(`  â€¢ ${s.start} Ã s ${s.end}${courtSuffix}`);
   });
   if (total > 0) {
-    lines.push(`💰 *Valor Total:* ${brl(total)}`);
+    lines.push(`ðŸ’° *Valor Total:* ${brl(total)}`);
   }
   return lines;
 }
@@ -76,16 +76,16 @@ function formatMultiDateSlotsMessage(
 ): string[] {
   const sportName = sortedSlots[0].sport || activeSport || firstCourt?.modalities?.[0] || 'Esporte';
   const lines: string[] = [
-    `🎾 *Modalidade:* ${sportName}`,
-    `⏰ *Horários Selecionados (${sortedSlots.length}):*`
+    `ðŸŽ¾ *Modalidade:* ${sportName}`,
+    `â° *HorÃ¡rios Selecionados (${sortedSlots.length}):*`
   ];
   sortedSlots.forEach(s => {
     const courtObj = courtsList.find(c => c.id === s.courtId);
     const courtName = courtObj?.name || 'Quadra';
-    lines.push(`  • ${formatShortDate(s.dateISO)} das ${s.start} às ${s.end} — ${courtName}`);
+    lines.push(`  â€¢ ${formatShortDate(s.dateISO)} das ${s.start} Ã s ${s.end} â€” ${courtName}`);
   });
   if (total > 0) {
-    lines.push(`💰 *Valor Total:* ${brl(total)}`);
+    lines.push(`ðŸ’° *Valor Total:* ${brl(total)}`);
   }
   return lines;
 }
@@ -98,7 +98,7 @@ function buildWhatsAppReservationMessage(
   athleteName?: string
 ): string {
   if (!slots.length) {
-    return `Olá! Gostaria de consultar informações sobre horários e reservas na ${arenaName || 'arena'}.`;
+    return `OlÃ¡! Gostaria de consultar informaÃ§Ãµes sobre horÃ¡rios e reservas na ${arenaName || 'arena'}.`;
   }
 
   const sortedSlots = [...slots].sort((a, b) => {
@@ -112,7 +112,7 @@ function buildWhatsAppReservationMessage(
   const allSameCourt = sortedSlots.every(s => s.courtId === sortedSlots[0].courtId);
 
   const lines: string[] = [
-    `Olá! Gostaria de agendar ${sortedSlots.length === 1 ? 'um horário' : 'os seguintes horários'} na *${arenaName || 'Arena'}*:\n`
+    `OlÃ¡! Gostaria de agendar ${sortedSlots.length === 1 ? 'um horÃ¡rio' : 'os seguintes horÃ¡rios'} na *${arenaName || 'Arena'}*:\n`
   ];
 
   if (sortedSlots.length === 1) {
@@ -124,7 +124,7 @@ function buildWhatsAppReservationMessage(
   }
 
   if (athleteName && athleteName.trim()) {
-    lines.push(`\n👤 *Atleta:* ${athleteName.trim()}`);
+    lines.push(`\nðŸ‘¤ *Atleta:* ${athleteName.trim()}`);
   }
 
   lines.push(`\nGostaria de confirmar a disponibilidade para reservar!`);
@@ -143,9 +143,8 @@ function getSlugFromPath(): string {
 
 function getInitialAthlete(): { name: string; email: string; phone: string } | null {
   try {
-    const saved = localStorage.getItem('atleta_session');
-    const token = localStorage.getItem('courtmanager_athlete_token') || localStorage.getItem('atleta_token');
-    if (saved && token) {
+    const saved = localStorage.getItem('athlete_profile');
+    if (saved) {
       return JSON.parse(saved);
     }
   } catch {
@@ -177,10 +176,10 @@ export default function App() {
   const [notFound, setNotFound] = useState(false);
   const [blockedMsg, setBlockedMsg] = useState<string | null>(null);
 
-  // Atleta Logado (Sessão do Atleta)
+  // Atleta Logado (SessÃ£o do Atleta)
   const [athlete, setAthlete] = useState<{ name: string; email: string; phone: string } | null>(getInitialAthlete);
 
-  // Carrinho de Múltiplos Horários
+  // Carrinho de MÃºltiplos HorÃ¡rios
   const [selectedSlots, setSelectedSlots] = useState<Slot[]>([]);
 
   // Modais e Drawers
@@ -195,15 +194,12 @@ export default function App() {
 
   // 1.1 Validar Token e Sincronizar Perfil do Atleta em Background
   useEffect(() => {
-    const token = localStorage.getItem('courtmanager_athlete_token') || localStorage.getItem('atleta_token');
-    if (!token) {
-      setAthlete(null);
-      localStorage.removeItem('atleta_session');
-      return;
-    }
 
+
+    const expired = () => { setAthlete(null); setProfileOpen(false); setMyResOpen(false); };
+    window.addEventListener('cm:session-expired', expired);
     fetch(`${BACKEND_URL}/api/public/tenant/${slug}/meu-perfil`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: {}
     })
       .then(async (res) => {
         if (res.ok) {
@@ -216,21 +212,20 @@ export default function App() {
               phone: sanitizeField(data.perfil.telefone)
             };
             setAthlete(userObj);
-            safeStorage.setItem('atleta_session', JSON.stringify(userObj));
+            safeStorage.setItem('athlete_profile', JSON.stringify(userObj));
           }
         } else if (res.status === 401 || res.status === 403) {
           setAthlete(null);
-          localStorage.removeItem('atleta_token');
-          localStorage.removeItem('courtmanager_athlete_token');
-          localStorage.removeItem('atleta_session');
+          localStorage.removeItem('athlete_profile');
         }
       })
       .catch(() => {
         // Falha de rede
       });
+    return () => window.removeEventListener('cm:session-expired', expired);
   }, [slug]);
 
-  // 2. Carregar Dados Públicos do Tenant por Slug
+  // 2. Carregar Dados PÃºblicos do Tenant por Slug
   useEffect(() => {
     let attempts = 0;
 
@@ -255,9 +250,9 @@ export default function App() {
             setArena({
               name: a.nome,
               cover: resolveCoverUrl(a.foto_capa),
-              address: a.endereco || 'Endereço não informado',
+              address: a.endereco || 'EndereÃ§o nÃ£o informado',
               whatsapp: a.telefone || '',
-              hoursToday: a.horario_abertura && a.horario_fechamento ? `${a.horario_abertura} às ${a.horario_fechamento}` : '06:00 às 23:00',
+              hoursToday: a.horario_abertura && a.horario_fechamento ? `${a.horario_abertura} Ã s ${a.horario_fechamento}` : '06:00 Ã s 23:00',
               rating: 4.9,
               reviews: 128
             });
@@ -279,10 +274,10 @@ export default function App() {
     fetchArena();
   }, [slug]);
 
-  // Atualização dinâmica do título da página com o nome oficial da arena
+  // AtualizaÃ§Ã£o dinÃ¢mica do tÃ­tulo da pÃ¡gina com o nome oficial da arena
   useEffect(() => {
     if (arena?.name) {
-      document.title = `${arena.name} · Agendamento Online | Arenix`;
+      document.title = `${arena.name} Â· Agendamento Online | Arenix`;
     }
   }, [arena?.name]);
 
@@ -319,7 +314,7 @@ export default function App() {
       .catch(err => console.error('Erro ao buscar quadras:', err));
   }, [slug, notFound, blockedMsg]);
 
-  // Lista de Esportes Disponíveis
+  // Lista de Esportes DisponÃ­veis
   const availableSports = useMemo(() => {
     const set = new Set<string>();
     courts.forEach(c => {
@@ -329,7 +324,7 @@ export default function App() {
     return ['Todos', ...Array.from(set)];
   }, [courts]);
 
-  // Quadras filtradas com preço dinâmico baseado no esporte selecionado
+  // Quadras filtradas com preÃ§o dinÃ¢mico baseado no esporte selecionado
   const filteredCourts = useMemo(() => {
     return courts
       .filter(c => selectedSport === 'Todos' || (c.modalities || []).includes(selectedSport))
@@ -358,7 +353,7 @@ export default function App() {
   useEffect(() => {
     let lastRefresh = Date.now();
     const handleRevalidate = () => {
-      // Não recarrega se o atleta estiver no meio do pagamento Pix ou preenchendo o checkout
+      // NÃ£o recarrega se o atleta estiver no meio do pagamento Pix ou preenchendo o checkout
       if (pixOpen || drawerOpen) return;
 
       if (document.visibilityState === 'visible' && Date.now() - lastRefresh > 3000) {
@@ -375,7 +370,7 @@ export default function App() {
     };
   }, [pixOpen, drawerOpen]);
 
-  // 4. Carregar Matriz de Disponibilidade de Horários com Preço Específico por Esporte
+  // 4. Carregar Matriz de Disponibilidade de HorÃ¡rios com PreÃ§o EspecÃ­fico por Esporte
   useEffect(() => {
     if (!courtId || notFound || blockedMsg) return;
     const url = `${BACKEND_URL}/api/public/tenant/${slug}/disponibilidade?data=${dateISO}&quadra_id=${courtId}&esporte=${encodeURIComponent(selectedSport)}`;
@@ -386,7 +381,7 @@ export default function App() {
           const qData = data.quadras[0];
           const activeCourt = courts.find(c => c.id === courtId);
           const activeSport = selectedSport !== 'Todos' ? selectedSport : (activeCourt?.modalities?.[0] || 'Beach Tennis');
-          
+
           const mappedSlots: Slot[] = qData.slots.map((s: { hora_inicio: string; hora_fim: string; preco: number; status: string }) => {
             const hInt = Number.parseInt(s.hora_inicio.split(':')[0], 10);
             const block = hInt < 12 ? 'manha' : hInt < 18 ? 'tarde' : 'noite';
@@ -417,7 +412,7 @@ export default function App() {
     targetSport?: string;
   } | null>(null);
 
-  // ─── BLOQUEIO DE SCROLL DE FUNDO QUANDO QUALQUER MODAL ESTIVER ABERTO ───
+  // â”€â”€â”€ BLOQUEIO DE SCROLL DE FUNDO QUANDO QUALQUER MODAL ESTIVER ABERTO â”€â”€â”€
   useEffect(() => {
     const isAnyModalOpen = loginOpen || profileOpen || myResOpen || drawerOpen || pixOpen || !!pendingSlotForSport || !!pendingNavigation;
     if (isAnyModalOpen) {
@@ -435,10 +430,10 @@ export default function App() {
 
   const court = useMemo(() => courts.find((c) => c.id === courtId) || courts[0], [courts, courtId]);
 
-  // Preço efetivo da sessão/esporte para a quadra ativa
+  // PreÃ§o efetivo da sessÃ£o/esporte para a quadra ativa
   const activeSessionSport = sessionSport || (selectedSport !== 'Todos' ? selectedSport : null);
 
-  // Slots exibidos na grade com preço e modalidade 100% sincronizados em tempo real com o esporte da sessão
+  // Slots exibidos na grade com preÃ§o e modalidade 100% sincronizados em tempo real com o esporte da sessÃ£o
   const displaySlots = useMemo(() => {
     return slots.map(s => {
       let price = s.price;
@@ -478,7 +473,7 @@ export default function App() {
     setCourtId(newCourtId);
   };
 
-  // Seleção Inteligente de Quadra (com proteção para carrinho preenchido)
+  // SeleÃ§Ã£o Inteligente de Quadra (com proteÃ§Ã£o para carrinho preenchido)
   const handleSelectCourt = (newCourtId: string) => {
     if (newCourtId === courtId) return;
 
@@ -497,7 +492,7 @@ export default function App() {
     setSelectedSlots([]);
   };
 
-  // Seleção de Modalidade na Barra Superior (com proteção)
+  // SeleÃ§Ã£o de Modalidade na Barra Superior (com proteÃ§Ã£o)
   const handleSelectSport = (sport: string) => {
     if (sport === selectedSport) return;
 
@@ -509,7 +504,7 @@ export default function App() {
     executeSportChange(sport);
   };
 
-  // Seleção de Data no Carrossel (com proteção)
+  // SeleÃ§Ã£o de Data no Carrossel (com proteÃ§Ã£o)
   const handleSelectDate = (newIso: string) => {
     if (newIso === dateISO) return;
 
@@ -522,7 +517,7 @@ export default function App() {
     setDateISO(newIso);
   };
 
-  // Confirmar navegação e limpar horários anteriores
+  // Confirmar navegaÃ§Ã£o e limpar horÃ¡rios anteriores
   const handleConfirmNavigation = () => {
     if (!pendingNavigation) return;
 
@@ -547,7 +542,7 @@ export default function App() {
     setSessionSport(sportName);
     setSelectedSport(sportName);
     const sportPrice = court?.sportPricing?.find(sp => sp.nome === sportName)?.preco || court?.pricePerHour || 100;
-    
+
     if (pendingSlotForSport) {
       const slotWithPrice: Slot = {
         ...pendingSlotForSport,
@@ -563,7 +558,7 @@ export default function App() {
       });
       setPendingSlotForSport(null);
     } else {
-      // Atualiza preços dos horários já selecionados para o novo esporte
+      // Atualiza preÃ§os dos horÃ¡rios jÃ¡ selecionados para o novo esporte
       setSelectedSlots(prev => prev.map(s => ({
         ...s,
         price: sportPrice,
@@ -572,7 +567,7 @@ export default function App() {
     }
   };
 
-  // Seleção Múltipla de Horários (Alternar entrada/saída do carrinho)
+  // SeleÃ§Ã£o MÃºltipla de HorÃ¡rios (Alternar entrada/saÃ­da do carrinho)
   const handleToggleSlot = (s: Slot) => {
     const exists = selectedSlots.some(item => item.id === s.id);
     if (exists) {
@@ -586,14 +581,14 @@ export default function App() {
       return;
     }
 
-    // Se um esporte já foi filtrado no topo
+    // Se um esporte jÃ¡ foi filtrado no topo
     if (selectedSport !== 'Todos') {
       const sportPrice = court?.sportPricing?.find(sp => sp.nome === selectedSport)?.preco || s.price;
       setSelectedSlots(prev => [...prev, { ...s, price: sportPrice, sport: selectedSport }]);
       return;
     }
 
-    // Se está em "Todos"
+    // Se estÃ¡ em "Todos"
     const isMultiSport = (court?.sportPricing && court.sportPricing.length > 1);
     if (!isMultiSport) {
       const singleSport = court?.sportPricing?.[0]?.nome || court?.modalities?.[0] || 'Beach Tennis';
@@ -607,12 +602,12 @@ export default function App() {
       const sportPrice = court?.sportPricing?.find(sp => sp.nome === sessionSport)?.preco || s.price;
       setSelectedSlots(prev => [...prev, { ...s, price: sportPrice, sport: sessionSport }]);
     } else {
-      // Abre o mini-modal de escolha rápida de esporte
+      // Abre o mini-modal de escolha rÃ¡pida de esporte
       setPendingSlotForSport(s);
     }
   };
 
-  // Avançar para o Checkout
+  // AvanÃ§ar para o Checkout
   const handleProceedCheckout = () => {
     if (selectedSlots.length === 0) return;
     if (!athlete) {
@@ -622,26 +617,22 @@ export default function App() {
     }
   };
 
-  const handleAuthed = (user: { name: string; email: string; phone: string; token?: string }) => {
+  const handleAuthed = (user: { name: string; email: string; phone: string;  }) => {
     const userSession = { name: user.name, email: user.email, phone: user.phone };
     setAthlete(userSession);
-    localStorage.setItem('atleta_session', JSON.stringify(userSession));
-    if (user.token) {
-      localStorage.setItem('atleta_token', user.token);
-    }
+    localStorage.setItem('athlete_profile', JSON.stringify(userSession));
+
     setLoginOpen(false);
   };
 
   const handleLogout = async () => {
-    await fetch(BACKEND_URL+'/api/auth/logout',{method:'POST'}).catch(()=>undefined);
+    try { await logout(); } catch { window.alert('NÃ£o foi possÃ­vel encerrar a sessÃ£o. Tente novamente.'); return; }
     setAthlete(null);
-    localStorage.removeItem('atleta_token');
-    localStorage.removeItem('courtmanager_athlete_token');
-    localStorage.removeItem('atleta_session');
+    localStorage.removeItem('athlete_profile');
     setProfileOpen(false);
   };
 
-  // Confirmar Agendamento de Múltiplos Horários via Backend Pix
+  // Confirmar Agendamento de MÃºltiplos HorÃ¡rios via Backend Pix
   const handleConfirm = async (dataInput: { slots: Slot[]; name: string; phone: string; cpf: string; sport?: string }) => {
     try {
       const activeSport = dataInput.sport || sessionSport || (selectedSport !== 'Todos' ? selectedSport : (court?.modalities?.[0] || 'Beach Tennis'));
@@ -681,7 +672,7 @@ export default function App() {
         const first = dataInput.slots[0];
         setReservation({
           courtId: first.courtId,
-          courtName: court ? `${court.name} (${dataInput.slots.length} horários)` : 'Múltiplas Quadras',
+          courtName: court ? `${court.name} (${dataInput.slots.length} horÃ¡rios)` : 'MÃºltiplas Quadras',
           dateISO: first.dateISO,
           start: first.start,
           end: dataInput.slots[dataInput.slots.length - 1].end,
@@ -702,7 +693,7 @@ export default function App() {
         }
       }
     } catch {
-      alert('Erro de conexão ao agendar. Tente novamente.');
+      alert('Erro de conexÃ£o ao agendar. Tente novamente.');
     }
   };
 
@@ -736,7 +727,7 @@ export default function App() {
       const data = await res.json();
       if (res.ok && data.reserva_id) {
         if (data.status_pagamento === 'Pago') {
-          alert('Esta reserva já consta como Paga!');
+          alert('Esta reserva jÃ¡ consta como Paga!');
           setRefreshCount(c => c + 1);
           return;
         }
@@ -765,31 +756,31 @@ export default function App() {
         });
         setPixOpen(true);
       } else {
-        alert(data.error || 'Não foi possível reabrir a cobrança Pix desta reserva.');
+        alert(data.error || 'NÃ£o foi possÃ­vel reabrir a cobranÃ§a Pix desta reserva.');
       }
     } catch {
       alert('Falha ao conectar com o servidor para consultar o Pix.');
     }
   };
 
-  // ─── TELA 404 (SLUG INVÁLIDO OU ARENA NÃO ENCONTRADA) ───
+  // â”€â”€â”€ TELA 404 (SLUG INVÃLIDO OU ARENA NÃƒO ENCONTRADA) â”€â”€â”€
   if (notFound) {
     return (
       <div className="min-h-screen bg-cream flex flex-col items-center justify-center p-6 text-center">
-        <div className="text-5xl mb-4">🏟️</div>
-        <h1 className="text-xl font-bold text-charcoal mb-2">Arena Não Encontrada (404)</h1>
+        <div className="text-5xl mb-4">ðŸŸï¸</div>
+        <h1 className="text-xl font-bold text-charcoal mb-2">Arena NÃ£o Encontrada (404)</h1>
         <p className="text-sm text-muted max-w-xs mb-6">
-          O link acessado não corresponde a nenhuma arena ativa em nossa plataforma. Verifique a URL e tente novamente.
+          O link acessado nÃ£o corresponde a nenhuma arena ativa em nossa plataforma. Verifique a URL e tente novamente.
         </p>
       </div>
     );
   }
 
-  // ─── TELA DE BLOQUEIO (ARENA SUSPENSA) ───
+  // â”€â”€â”€ TELA DE BLOQUEIO (ARENA SUSPENSA) â”€â”€â”€
   if (blockedMsg) {
     return (
       <div className="min-h-screen bg-[#18181b] text-white flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center text-3xl mb-4 text-red-500">🔒</div>
+        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center text-3xl mb-4 text-red-500">ðŸ”’</div>
         <h2 className="text-xl font-bold mb-2 text-red-400">Agendamentos Suspensos</h2>
         <p className="text-sm text-gray-400 max-w-xs">{blockedMsg}</p>
       </div>
@@ -836,16 +827,16 @@ export default function App() {
           showPrice={selectedSport !== 'Todos' || !!sessionSport}
         />
 
-        {/* Rodapé Elegante com Selo da Plataforma */}
+        {/* RodapÃ© Elegante com Selo da Plataforma */}
         <footer className="mt-6 pt-4 pb-2 border-t border-edge/60 text-center px-4">
           <p className="text-[11px] text-muted/80 font-medium flex items-center justify-center gap-1.5">
             <ShieldCheck size={14} className="text-available-text shrink-0" />
-            Agendamento garantido por <span className="font-bold text-charcoal">Arenix</span> · Sistema para Arenas
+            Agendamento garantido por <span className="font-bold text-charcoal">Arenix</span> Â· Sistema para Arenas
           </p>
         </footer>
       </main>
 
-      {/* Modal de Confirmação de Troca com Seleção Ativa */}
+      {/* Modal de ConfirmaÃ§Ã£o de Troca com SeleÃ§Ã£o Ativa */}
       {pendingNavigation && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-charcoal/60 backdrop-blur-sm animate-fadeIn"
@@ -873,8 +864,8 @@ export default function App() {
             </h3>
 
             <p className="text-xs text-muted leading-relaxed mb-6">
-              Você já selecionou <strong className="text-charcoal font-semibold">{selectedSlots.length} {selectedSlots.length === 1 ? 'horário' : 'horários'}</strong>. 
-              Mudar agora irá limpar a sua seleção atual. Deseja continuar?
+              VocÃª jÃ¡ selecionou <strong className="text-charcoal font-semibold">{selectedSlots.length} {selectedSlots.length === 1 ? 'horÃ¡rio' : 'horÃ¡rios'}</strong>. 
+              Mudar agora irÃ¡ limpar a sua seleÃ§Ã£o atual. Deseja continuar?
             </p>
 
             <div className="flex flex-col gap-2">
@@ -883,7 +874,7 @@ export default function App() {
                 onClick={handleConfirmNavigation}
                 className="w-full py-3 rounded-2xl bg-charcoal text-white font-bold text-sm shadow-soft transition-all active:scale-[0.98]"
               >
-                Trocar e limpar seleção
+                Trocar e limpar seleÃ§Ã£o
               </button>
 
               <button
@@ -891,14 +882,14 @@ export default function App() {
                 onClick={() => setPendingNavigation(null)}
                 className="w-full py-2.5 rounded-2xl text-xs font-semibold text-muted hover:text-charcoal transition-colors"
               >
-                Manter meus horários
+                Manter meus horÃ¡rios
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Mini-Modal de Escolha Rápida de Esporte (Opção 1) */}
+      {/* Mini-Modal de Escolha RÃ¡pida de Esporte (OpÃ§Ã£o 1) */}
       {pendingSlotForSport && (
         <div 
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-charcoal/50 backdrop-blur-sm animate-fadeIn"
@@ -915,9 +906,9 @@ export default function App() {
           >
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-base font-bold text-charcoal">Qual esporte você vai jogar?</h3>
+                <h3 className="text-base font-bold text-charcoal">Qual esporte vocÃª vai jogar?</h3>
                 <p className="text-xs text-muted mt-0.5">
-                  {court?.name} · {pendingSlotForSport.start} às {pendingSlotForSport.end}
+                  {court?.name} Â· {pendingSlotForSport.start} Ã s {pendingSlotForSport.end}
                 </p>
               </div>
               <button
@@ -956,7 +947,7 @@ export default function App() {
               </div>
               <div>
                 <span className="text-xs font-bold text-muted block">
-                  {selectedSlots.length} {selectedSlots.length === 1 ? 'horário selecionado' : 'horários selecionados'}
+                  {selectedSlots.length} {selectedSlots.length === 1 ? 'horÃ¡rio selecionado' : 'horÃ¡rios selecionados'}
                 </span>
                 <span className="text-base font-bold text-available-text">
                   {brl(totalPrice)}
@@ -968,7 +959,7 @@ export default function App() {
               onClick={handleProceedCheckout}
               className="tap flex items-center gap-2 bg-available-text text-white font-bold px-5 h-12 rounded-2xl shadow-soft active:scale-[0.98] transition text-sm"
             >
-              Avançar
+              AvanÃ§ar
               <ArrowRight size={16} />
             </button>
           </div>
@@ -978,10 +969,14 @@ export default function App() {
       {/* Modal de Login / Cadastro do Atleta */}
       {loginOpen && (
         <LoginScreen
-          arena={arena}
+          arena={arena!}
           slug={slug}
           onAuthed={handleAuthed}
           onClose={() => setLoginOpen(false)}
+          onGuestCheckout={() => {
+            setLoginOpen(false);
+            setDrawerOpen(true);
+          }}
         />
       )}
 
@@ -1009,7 +1004,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* Header com Ícone e Título */}
+            {/* Header com Ãcone e TÃ­tulo */}
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-[#25D366] flex items-center justify-center shrink-0 shadow-xs">
                 <MessageCircle size={24} className="fill-[#25D366]/20 stroke-[#1eb854] stroke-[2.2]" />
@@ -1019,12 +1014,12 @@ export default function App() {
                   Reserva via WhatsApp
                 </h3>
                 <p className="text-xs text-muted mt-1 leading-relaxed">
-                  Esta arena confirma os agendamentos diretamente pela recepção no WhatsApp.
+                  Esta arena confirma os agendamentos diretamente pela recepÃ§Ã£o no WhatsApp.
                 </p>
               </div>
             </div>
 
-            {/* Card com Detalhes da Arena e dos Horários Selecionados */}
+            {/* Card com Detalhes da Arena e dos HorÃ¡rios Selecionados */}
             <div className="p-4 rounded-2xl bg-[#faf8f5] border border-edge flex flex-col gap-3">
               <div className="flex items-center justify-between text-xs">
                 <div>
@@ -1038,7 +1033,7 @@ export default function App() {
                 </div>
                 {selectedSlots.length > 0 && (
                   <span className="px-2.5 py-1 rounded-lg bg-white border border-edge text-[11px] font-bold text-charcoal shadow-xs">
-                    {selectedSlots.length} {selectedSlots.length === 1 ? 'horário' : 'horários'}
+                    {selectedSlots.length} {selectedSlots.length === 1 ? 'horÃ¡rio' : 'horÃ¡rios'}
                   </span>
                 )}
               </div>
@@ -1050,7 +1045,7 @@ export default function App() {
                     return (
                       <div key={idx} className="flex items-center justify-between text-[11.5px] text-charcoal/80">
                         <span>
-                          <strong>{formatShortDate(s.dateISO)}</strong> · {s.start} às {s.end}
+                          <strong>{formatShortDate(s.dateISO)}</strong> Â· {s.start} Ã s {s.end}
                           {c && <span className="text-muted ml-1">({c.name})</span>}
                         </span>
                         <span className="font-semibold text-charcoal">{brl(s.price)}</span>
@@ -1065,7 +1060,7 @@ export default function App() {
               )}
             </div>
 
-            {/* Botões de Ação */}
+            {/* BotÃµes de AÃ§Ã£o */}
             <div className="flex flex-col gap-2.5 pt-1">
               {(() => {
                 const rawPhone = paymentNotConfigured.telefone || arena?.telefone || '';
@@ -1100,7 +1095,7 @@ export default function App() {
                 onClick={() => setPaymentNotConfigured(null)}
                 className="w-full py-2 text-xs font-semibold text-muted hover:text-charcoal transition text-center"
               >
-                Voltar para os horários
+                Voltar para os horÃ¡rios
               </button>
             </div>
           </div>
@@ -1119,7 +1114,7 @@ export default function App() {
             setAthlete(prev => {
               if (!prev) return prev;
               const next = { ...prev, name: updated.name, phone: updated.phone };
-              localStorage.setItem('atleta_session', JSON.stringify(next));
+              localStorage.setItem('athlete_profile', JSON.stringify(next));
               return next;
             });
           }}
@@ -1157,4 +1152,3 @@ export default function App() {
     </div>
   );
 }
-

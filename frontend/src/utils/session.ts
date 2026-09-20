@@ -1,4 +1,4 @@
-import { safeStorage } from './safeStorage';
+import { clearLocalSession } from './apiFetch';
 
 export interface SessionUser {
   id?: string | number;
@@ -34,23 +34,5 @@ export function getStoredUser(): SessionUser | null {
 }
 
 export function clearSession(): void {
-  safeStorage.removeItem('courtmanager_token');
-  safeStorage.removeItem('courtmanager_user');
-}
-
-export function restoreRemoteLogin(): void {
-  const params = new URLSearchParams(window.location.search);
-  const urlToken = params.get('token');
-  const urlUser = params.get('user');
-  if (!urlToken || !urlUser) return;
-
-  const sanitizedToken = urlToken.replace(/[^a-zA-Z0-9._-]/g, '').trim();
-  safeStorage.setItem('courtmanager_token', sanitizedToken);
-  try {
-    const decodedUser = decodeURIComponent(atob(urlUser)).replace(/[<>\0]/g, '');
-    safeStorage.setItem('courtmanager_user', decodedUser);
-  } catch {
-    safeStorage.removeItem('courtmanager_user');
-  }
-  window.history.replaceState({}, document.title, window.location.pathname);
+  clearLocalSession();
 }

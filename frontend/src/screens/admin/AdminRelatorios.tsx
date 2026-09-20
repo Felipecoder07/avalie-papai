@@ -10,7 +10,6 @@ interface Quadra {
 }
 
 export function AdminRelatorios() {
-  const token = localStorage.getItem('courtmanager_token');
 
   // Dates initialization
   const getTodayStr = () => {
@@ -48,7 +47,7 @@ export function AdminRelatorios() {
     const fetchQuadras = async () => {
       try {
         const res = await fetch('/api/quadras', {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: {}
         });
         if (res.ok) {
           const data = await res.json();
@@ -59,7 +58,7 @@ export function AdminRelatorios() {
       }
     };
     fetchQuadras();
-  }, [token]);
+  }, []);
 
   // Handle Generate Report
   const gerarRelatorio = async (currentTab = relAtivo) => {
@@ -81,7 +80,7 @@ export function AdminRelatorios() {
 
     try {
       const res = await fetch(`/api/relatorios/${currentTab}?${params}`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {}
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao gerar relatório');

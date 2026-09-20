@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('clientesController');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
 
@@ -12,7 +13,7 @@ const listarClientes = async (req, res) => {
     );
     res.json(clientes);
   } catch (error) {
-    console.error('Erro ao listar clientes:', error);
+    logger.error('Erro ao listar clientes:', error);
     res.status(500).json({ error: 'Erro interno ao listar clientes.' });
   }
 };
@@ -55,7 +56,7 @@ const criarCliente = async (req, res) => {
 
     res.status(201).json({ id: result.lastID, nome, email, telefone, ativo: 1 });
   } catch (error) {
-    console.error('Erro ao criar cliente:', error);
+    logger.error('Erro ao criar cliente:', error);
     res.status(500).json({ error: 'Erro interno ao criar cliente.' });
   }
 };
@@ -90,7 +91,7 @@ const obterCliente = async (req, res) => {
 
     res.json(cliente);
   } catch (error) {
-    console.error('Erro ao obter cliente:', error);
+    logger.error('Erro ao obter cliente:', error);
     res.status(500).json({ error: 'Erro interno ao obter cliente.' });
   }
 };
@@ -136,7 +137,7 @@ const atualizarCliente = async (req, res) => {
 
     res.json({ message: 'Cliente atualizado com sucesso.' });
   } catch (error) {
-    console.error('Erro ao atualizar cliente:', error);
+    logger.error('Erro ao atualizar cliente:', error);
     res.status(500).json({ error: 'Erro interno ao atualizar cliente.' });
   }
 };
@@ -159,7 +160,7 @@ const arquivarCliente = async (req, res) => {
 
     res.json({ message: 'Cliente arquivado com sucesso. O histórico de reservas e pagamentos foi preservado.' });
   } catch (error) {
-    console.error('Erro ao arquivar cliente:', error);
+    logger.error('Erro ao arquivar cliente:', error);
     res.status(500).json({ error: 'Erro interno ao arquivar cliente.' });
   }
 };
@@ -182,7 +183,7 @@ const desarquivarCliente = async (req, res) => {
 
     res.json({ message: 'Cliente reativado com sucesso!' });
   } catch (error) {
-    console.error('Erro ao desarquivar cliente:', error);
+    logger.error('Erro ao desarquivar cliente:', error);
     res.status(500).json({ error: 'Erro interno ao desarquivar cliente.' });
   }
 };
@@ -206,10 +207,73 @@ const excluirCliente = async (req, res) => {
 
     res.json({ message: 'Cliente excluído com sucesso.' });
   } catch (error) {
-    console.error('Erro ao excluir cliente:', error);
+    logger.error('Erro ao excluir cliente:', error);
     res.status(500).json({ error: 'Erro interno ao excluir cliente.' });
   }
 };
 
-module.exports = { listarClientes, criarCliente, obterCliente, atualizarCliente, excluirCliente, arquivarCliente, desarquivarCliente };
+const listarVinculosPendentes = async (req, res) => {
+  try {
+    const tenant_id = req.user.tenant_id;
+    const pendentes = await db.allAsync(`
+      SELECT m.usuario_id, m.cliente_id, m.created_at,
+             c.nome as cliente_nome, c.telefone as cliente_telefone, c.email as cliente_email,
+             u.nome as usuario_nome, u.email as usuario_email
+      FROM ClientMemberships m
+      JOIN Clientes c ON m.cliente_id = c.id
+      JOIN Usuarios u ON m.usuario_id = u.id
+      WHERE m.tenant_id = ? AND m.verified = 0
+      ORDER BY m.created_at DESC
+    `, [tenant_id]);
+    res.json(pendentes);
+  } catch (error) {
+    logger.error('Erro ao listar vínculos pendentes:', error);
+    res.status(500).json({ error: 'Erro interno ao listar vínculos pendentes.' });
+  }
+};
+
+const aprovarVinculo = async (req, res) => {
+  try {
+    const tenant_id = req.user.tenant_id;
+    const { usuario_id, cliente_id } = req.params;
+
+    const result = await db.runAsync(
+      'UPDATE ClientMemberships SET verified = 1 WHERE usuario_id = ? AND cliente_id = ? AND tenant_id = ? AND verified = 0',
+      [usuario_id, cliente_id, tenant_id]
+    );
+
+    if (result.changes === 0) return res.status(404).json({ error: 'Vínculo pendente não encontrado.' });
+
+    logAuditEvent(req.user.id, 'Aprovação de Vínculo', `Aprovou vínculo do usuário ${usuario_id} ao cliente ${cliente_id}`, req.ip);
+    res.json({ message: 'Vínculo aprovado com sucesso.' });
+  } catch (error) {
+    logger.error('Erro ao aprovar vínculo:', error);
+    res.status(500).json({ error: 'Erro interno ao aprovar vínculo.' });
+  }
+};
+
+const rejeitarVinculo = async (req, res) => {
+  try {
+    const tenant_id = req.user.tenant_id;
+    const { usuario_id, cliente_id } = req.params;
+
+    const result = await db.runAsync(
+      'DELETE FROM ClientMemberships WHERE usuario_id = ? AND cliente_id = ? AND tenant_id = ? AND verified = 0',
+      [usuario_id, cliente_id, tenant_id]
+    );
+
+    if (result.changes === 0) return res.status(404).json({ error: 'Vínculo pendente não encontrado.' });
+
+    logAuditEvent(req.user.id, 'Rejeição de Vínculo', `Rejeitou vínculo do usuário ${usuario_id} ao cliente ${cliente_id}`, req.ip);
+    res.json({ message: 'Vínculo rejeitado com sucesso.' });
+  } catch (error) {
+    logger.error('Erro ao rejeitar vínculo:', error);
+    res.status(500).json({ error: 'Erro interno ao rejeitar vínculo.' });
+  }
+};
+
+module.exports = { 
+  listarClientes, criarCliente, obterCliente, atualizarCliente, excluirCliente, arquivarCliente, desarquivarCliente,
+  listarVinculosPendentes, aprovarVinculo, rejeitarVinculo
+};
 

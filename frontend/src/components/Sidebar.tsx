@@ -1,9 +1,8 @@
-import { apiFetch as fetch } from '../utils/apiFetch';
+import { logout } from '../utils/apiFetch';
 import { LayoutDashboard, Building2, FileText, Wallet, Users, Megaphone, ShieldCheck, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SidebarShell, type NavItem, type SidebarProps } from './SidebarShell';
 import { clearSession } from '../utils/session';
-import { safeStorage } from '../utils/safeStorage';
 
 export type { NavItem } from './SidebarShell';
 
@@ -24,15 +23,10 @@ export function Sidebar({ collapsed, onToggle }: Readonly<SidebarProps>) {
   const handleLogout = async (e: React.MouseEvent) => {
     e.preventDefault();
     try {
-      const token = safeStorage.getItem('courtmanager_token');
-      if (token) {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-      }
+      await logout();
     } catch (err) {
-      console.error('Erro no logout do backend:', err);
+      window.alert('Não foi possível encerrar a sessão. Tente novamente.');
+      return;
     }
     clearSession();
     navigate('/master-login');

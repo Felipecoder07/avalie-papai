@@ -9,20 +9,24 @@ let provider;
 beforeAll(fixture.initialize);
 beforeEach(async () => {
   await fixture.seed();
-  await db.runAsync("UPDATE Arenas SET gateway_access_token='FIXTURE-ARENA-TOKEN',gateway_device_id='device_test_123' WHERE id=1");
+  await db.runAsync("UPDATE Arenas SET gateway_access_token='FIXTURE-ARENA-TOKEN',gateway_user_id='123',gateway_device_id='device_test_123' WHERE id=1");
   provider = vi.fn().mockRejectedValue(new Error('Unexpected provider call'));
   vi.stubGlobal('fetch',provider);
 });
 afterEach(() => vi.unstubAllEnvs());
 afterAll(fixture.close);
 function respond(body,ok=true) { provider.mockResolvedValueOnce({ok,json:async()=>body}); }
+function respondStatus(status,body={}) { provider.mockResolvedValueOnce({ok:false,status,json:async()=>body}); }
 const pix = {id:991,point_of_interaction:{transaction_data:{qr_code_base64:'dGVzdA==',qr_code:'fixture-pix'}}};
 async function charge(session,extra={}) {
   return auth(request(app).post(base+'/cobranca'),session).send({reserva_id:1,metodo:'Pix',...extra});
 }
-async function transaction(amount=100) {
+async function transaction(amount=10000) {
+  await require('../src/config/securitySchema').ensureSecuritySchema(db);
   await db.runAsync("INSERT INTO TransacoesGateway(reserva_id,gateway_ref,metodo,valor,status) VALUES(1,'991','Pix',?,'Pendente')",[amount]);
+  await db.runAsync("INSERT INTO PaymentIntents(id,tenant_id,reserva_id,scope,method,amount_cents,state,gateway_ref,created,updated) VALUES('intent-991',1,1,'reservation:1','Pix',?,'pending','991',1,1)",[amount]);
 }
+const approvedPayment = (overrides={}) => ({id:991,status:'approved',currency_id:'BRL',collector_id:123,transaction_amount:100,...overrides});
 async function unpaid() {
   expect(await db.getAsync('SELECT COUNT(*) AS count FROM Pagamentos')).toEqual({count:0});
   expect((await db.getAsync('SELECT status_pagamento FROM Reservas WHERE id=1')).status_pagamento).toBe('Pendente');
@@ -40,7 +44,7 @@ it('creates Pix with the tenant credential and reuses the persisted intent',asyn
   const [url,options]=provider.mock.calls[0];
   expect(url).toBe('https://api.mercadopago.com/v1/payments');
   expect(options.headers.Authorization).toBe('Bearer FIXTURE-ARENA-TOKEN');
-  expect(JSON.parse(options.body)).toMatchObject({transaction_amount:100,payment_method_id:'pix'});
+  expect(JSON.parse(options.body)).toMatchObject({transaction_amount:100,description:'Reserva #1 no Arenix'});
   expect((await db.getAsync('SELECT id FROM PaymentIntents')).id).toBe(options.headers['X-Idempotency-Key']);
   expect(await db.getAsync('SELECT COUNT(*) AS count FROM TransacoesGateway')).toEqual({count:1});
   await unpaid();
@@ -71,7 +75,7 @@ it.each([actors.owner,actors.receptionist,actors.master])('denies gateway manage
   const session=await login(id);
   expect((await auth(request(app).get(base+'/maquineta'),session)).status).toBe(403);
   expect((await auth(request(app).post(base+'/maquineta'),session).send({gateway_access_token:'MALICIOUS'})).status).toBe(403);
-  expect((await auth(request(app).post(base+'/oauth/desconectar'),session)).status).toBe(403);
+  expect((await auth(request(app).post(base+'/oauth/desconectar'),session).send({senha_atual:fixture.PASSWORD})).status).toBe(403);
   expect((await auth(request(app).get(base+'/oauth/url'),session)).status).toBe(403);
   expect((await db.getAsync('SELECT gateway_access_token FROM Arenas WHERE id=1')).gateway_access_token).toBe('FIXTURE-ARENA-TOKEN');
 });
@@ -94,7 +98,7 @@ it('updates a credential and explicitly disconnects without returning it',async(
   const session=await login(actors.admin);
   expect((await auth(request(app).post(base+'/maquineta'),session).send({gateway_access_token:'NEW-FIXTURE-TOKEN'})).status).toBe(200);
   expect((await db.getAsync('SELECT gateway_access_token FROM Arenas WHERE id=1')).gateway_access_token).toBe('NEW-FIXTURE-TOKEN');
-  expect((await auth(request(app).post(base+'/oauth/desconectar'),session)).status).toBe(200);
+  expect((await auth(request(app).post(base+'/oauth/desconectar'),session).send({senha_atual:fixture.PASSWORD})).status).toBe(200);
   expect((await db.getAsync('SELECT gateway_access_token FROM Arenas WHERE id=1')).gateway_access_token).toBeNull();
 });
 it.each([actors.owner,actors.admin,actors.master])('production forbids simulation for actor %s',async id=>{
@@ -108,11 +112,11 @@ it.each([actors.owner,actors.admin,actors.master])('production forbids simulatio
 it('five signed HTTP webhooks credit exactly once in production branches',async()=>{
   await transaction();
   vi.stubEnv('NODE_ENV','production');
-  provider.mockImplementation(async()=>({ok:true,json:async()=>({id:991,status:'approved',transaction_amount:100})}));
+  provider.mockImplementation(async()=>({ok:true,json:async()=>approvedPayment()}));
   const responses=await Promise.all(Array.from({length:5},()=>signedWebhook(app,991)));
   expect(responses.map(r=>r.status)).toEqual([200,200,200,200,200]);
   expect(provider).toHaveBeenCalledTimes(5);
-  expect(await db.getAsync('SELECT COUNT(*) AS count,SUM(valor) AS total FROM Pagamentos')).toEqual({count:1,total:100});
+  expect(await db.getAsync('SELECT COUNT(*) AS count,SUM(valor) AS total FROM Pagamentos')).toEqual({count:1,total:10000});
   expect(await db.getAsync('SELECT COUNT(*) AS count FROM GatewayCredits')).toEqual({count:1});
   expect((await db.getAsync('SELECT status_pagamento FROM Reservas WHERE id=2')).status_pagamento).toBe('Pendente');
 });
@@ -131,14 +135,33 @@ it('HTTP charge and webhook for one currency unit do not settle another slot',as
   respond(pix);
   const response=await charge(session,{valor:1});
   expect(response.status).toBe(200);
-  respond({id:991,status:'approved',transaction_amount:1});
+  expect(await db.getAsync("SELECT t.valor,i.amount_cents,i.gateway_ref,a.gateway_user_id FROM TransacoesGateway t JOIN PaymentIntents i ON i.gateway_ref=t.gateway_ref JOIN Arenas a ON a.id=1 WHERE t.gateway_ref='991'")).toMatchObject({valor:100,amount_cents:100,gateway_ref:'991',gateway_user_id:'123'});
+  respond(approvedPayment({transaction_amount:1}));
   expect((await signedWebhook(app,991)).status).toBe(200);
   expect(await db.allAsync('SELECT status_pagamento FROM Reservas WHERE id IN (1,2) ORDER BY id')).toEqual([{status_pagamento:'Parcial'},{status_pagamento:'Pendente'}]);
-  expect(await db.getAsync('SELECT COUNT(*) AS count,SUM(valor) AS total FROM Pagamentos')).toEqual({count:1,total:1});
+  expect(await db.getAsync('SELECT COUNT(*) AS count,SUM(valor) AS total FROM Pagamentos')).toEqual({count:1,total:100});
+});
+it.each([
+  ['wrong currency',{currency_id:'USD'}],
+  ['wrong provider payment id',{id:992}],
+  ['wrong receiving account',{collector_id:456}],
+  ['wrong amount',{transaction_amount:99}],
+])('does not credit an approved webhook with %s',async(_label,overrides)=>{
+  await transaction();
+  respond(approvedPayment(overrides));
+  expect((await signedWebhook(app,991)).status).toBe(200);
+  await unpaid();
+  expect(await db.getAsync('SELECT COUNT(*) AS count FROM GatewayCredits')).toEqual({count:0});
+});
+it('does not query or credit a transaction without its persisted payment intent',async()=>{
+  await db.runAsync("INSERT INTO TransacoesGateway(reserva_id,gateway_ref,metodo,valor,status) VALUES(1,'991','Pix',10000,'Pendente')");
+  expect((await signedWebhook(app,991)).status).toBe(200);
+  expect(provider).not.toHaveBeenCalled();
+  await unpaid();
 });
 it('pending provider payment produces no credit',async()=>{
   await transaction();
-  respond({id:991,status:'pending',transaction_amount:100});
+  respond(approvedPayment({status:'pending'}));
   expect((await signedWebhook(app,991)).status).toBe(200);
   expect(provider).toHaveBeenCalledTimes(1);
   await unpaid();
@@ -148,17 +171,28 @@ it('transient provider failure returns retry and later success credits once',asy
   provider.mockRejectedValueOnce(new Error('Fixture timeout'));
   expect((await signedWebhook(app,991)).status).toBe(503);
   await unpaid();
-  respond({id:991,status:'approved',transaction_amount:100});
+  respond(approvedPayment());
   expect((await signedWebhook(app,991)).status).toBe(200);
-  expect(await db.getAsync('SELECT COUNT(*) AS count,SUM(valor) AS total FROM Pagamentos')).toEqual({count:1,total:100});
+  expect(await db.getAsync('SELECT COUNT(*) AS count,SUM(valor) AS total FROM Pagamentos')).toEqual({count:1,total:10000});
+});
+it('provider HTTP 503 returns retry and later delivery credits once',async()=>{
+  await transaction();
+  respondStatus(503);
+  expect((await signedWebhook(app,991)).status).toBe(503);
+  await unpaid();
+  expect(await db.getAsync('SELECT COUNT(*) AS count FROM GatewayCredits')).toEqual({count:0});
+  respond(approvedPayment());
+  expect((await signedWebhook(app,991)).status).toBe(200);
+  expect(await db.getAsync('SELECT COUNT(*) AS count,SUM(valor) AS total FROM Pagamentos')).toEqual({count:1,total:10000});
+  expect(await db.getAsync('SELECT COUNT(*) AS count FROM GatewayCredits')).toEqual({count:1});
 });
 it('card approval uses the same ledger as repeated notification',async()=>{
   const owner=await login(actors.owner);
   respond({id:991,status:'approved'});
   expect((await charge(owner,{metodo:'Cartão',card_data:{token:'fixture-card',payment_method_id:'visa'}})).status).toBe(200);
-  respond({id:991,status:'approved',transaction_amount:100});
+  respond(approvedPayment());
   expect((await signedWebhook(app,991)).status).toBe(200);
-  expect(await db.getAsync('SELECT COUNT(*) AS count,SUM(valor) AS total FROM Pagamentos')).toEqual({count:1,total:100});
+  expect(await db.getAsync('SELECT COUNT(*) AS count,SUM(valor) AS total FROM Pagamentos')).toEqual({count:1,total:10000});
 });
 it('terminal charge uses the configured device and stays pending',async()=>{
   const admin=await login(actors.admin);
@@ -169,12 +203,12 @@ it('terminal charge uses the configured device and stays pending',async()=>{
 });
 it.each([true,false])('refund is booked only after provider confirmation (%s)',async approved=>{
   await transaction();
-  await require('../src/services/paymentLedgerService').settle('991',{valor_pago:100});
+  await require('../src/services/paymentLedgerService').settle('991',{valor_pago:10000});
   respond(approved?{id:1,status:'approved',amount:100}:{message:'Fixture declined'},approved);
   const result=await require('../src/services/gatewayService').estornarPagamentoPix(1,1);
   expect(result.success).toBe(approved);
   expect(provider).toHaveBeenCalledTimes(1);
-  expect(await db.getAsync('SELECT SUM(valor) AS total FROM Pagamentos')).toEqual({total:approved?0:100});
+  expect(await db.getAsync('SELECT SUM(valor) AS total FROM Pagamentos')).toEqual({total:approved?0:10000});
   expect((await db.getAsync("SELECT status FROM TransacoesGateway WHERE gateway_ref='991'")).status).toBe(approved?'Estornado':'Pago');
 });
 it('static Pix remains available without a provider call',async()=>{

@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('database');
 const sqlite3 = require('sqlite3').verbose();
 const path = require("node:path");
 const fs = require("node:fs");
@@ -15,11 +16,15 @@ const dbPath = isTest ? ':memory:' : path.join(dataDir, 'courtmanager.sqlite');
 
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
-    console.error('Erro ao conectar com o banco de dados:', err.message);
+    logger.error('Erro ao conectar com o banco de dados:', err.message);
   } else {
     if (!isTest) {
-      console.log('Conectado ao banco de dados SQLite.');
+      logger.log('Conectado ao banco de dados SQLite.');
     }
+    // Habilitar Foreign Keys em todas as conexões
+    db.run('PRAGMA foreign_keys = ON', (pragmaErr) => {
+      if (pragmaErr) logger.error('Erro ao habilitar foreign keys:', pragmaErr.message);
+    });
   }
 });
 

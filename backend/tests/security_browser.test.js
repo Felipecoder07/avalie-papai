@@ -14,7 +14,7 @@ beforeAll(async () => {
   await fixture.initialize();
   const frontend = path.resolve(__dirname, '../../frontend');
   const { createServer } = await import(pathToFileURL(path.join(frontend,'node_modules/vite/dist/node/index.js')).href);
-  const { default: react } = await import(pathToFileURL(path.join(frontend,'node_modules/@vitejs/plugin-react/dist/index.mjs')).href);
+  const { default: react } = await import(pathToFileURL(path.join(frontend,'node_modules/@vitejs/plugin-react/dist/index.js')).href);
   vite = await createServer({root:frontend,configFile:false,envFile:false,plugins:[react()],
     server:{middlewareMode:true,hmr:false,host:'127.0.0.1'},logLevel:'error'});
   let app;
@@ -79,7 +79,7 @@ it('stored client markup is rendered as text in the actual administrative page',
   expect(dialogs).toEqual([]);
   const exposed = await page.evaluate(()=>({cookies:document.cookie,stored:localStorage.getItem('courtmanager_token')}));
   expect(exposed.cookies).not.toContain('cm_session=');
-  expect(exposed.stored).toBe('session');
+  expect(exposed.stored).toBeNull();
   expect(cookies.find(cookie=>cookie.name==='cm_session').httpOnly).toBe(true);
   const missingCsrf = await context.request.post(origin+'/api/auth/logout');
   expect(missingCsrf.status()).toBe(403);

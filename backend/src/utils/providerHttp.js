@@ -6,6 +6,7 @@ async function fetchProvider(url,options={}) {
   if(active>=20) throw httpError(503,'Integração ocupada. Tente novamente.');
   active++;
   try { return await globalThis.fetch(url,{...options,signal:AbortSignal.timeout(15000)}); }
+  catch { throw httpError(502, 'Não foi possível consultar o provedor de pagamentos.'); }
   finally { active--; }
 }
 module.exports={fetch:fetchProvider};

@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('motivosController');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
 
@@ -13,7 +14,7 @@ const listarMotivos = async (req, res) => {
     const motivos = await db.allAsync(`SELECT * FROM MotivosCancelamento WHERE tenant_id = ? ORDER BY id ASC`, [tenant_id]);
     res.json([...defaultMotivos, ...motivos]);
   } catch (error) {
-    console.error('Erro ao buscar motivos de cancelamento:', error);
+    logger.error('Erro ao buscar motivos de cancelamento:', error);
     res.status(500).json({ error: 'Erro ao buscar motivos de cancelamento.' });
   }
 };
@@ -37,7 +38,7 @@ const criarMotivo = async (req, res) => {
     logAuditEvent(admin_id, 'Criação de Motivo', `Adicionou o motivo de cancelamento ID ${result.lastID}`, ip);
     res.status(201).json({ id: result.lastID, motivo });
   } catch (error) {
-    console.error('Erro ao criar motivo de cancelamento:', error);
+    logger.error('Erro ao criar motivo de cancelamento:', error);
     res.status(500).json({ error: 'Erro ao criar motivo de cancelamento.' });
   }
 };
@@ -62,7 +63,7 @@ const excluirMotivo = async (req, res) => {
     logAuditEvent(admin_id, 'Exclusão de Motivo', `Removeu o motivo de cancelamento ID ${id}`, ip);
     res.json({ message: 'Motivo de cancelamento excluído com sucesso.' });
   } catch (error) {
-    console.error('Erro ao excluir motivo de cancelamento:', error);
+    logger.error('Erro ao excluir motivo de cancelamento:', error);
     res.status(500).json({ error: 'Erro ao excluir motivo de cancelamento.' });
   }
 };

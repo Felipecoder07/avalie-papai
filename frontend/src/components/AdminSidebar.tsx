@@ -1,3 +1,4 @@
+import { logout } from '../utils/apiFetch';
 import { LayoutDashboard, Calendar, Wallet, Users, BarChart3, ShieldCheck, Settings, CreditCard } from 'lucide-react';
 import { SidebarShell, type NavItem, type SidebarProps } from './SidebarShell';
 import { clearSession, getStoredUser } from '../utils/session';
@@ -29,7 +30,8 @@ export function AdminSidebar({ collapsed, onToggle }: Readonly<SidebarProps>) {
   const userName = user?.nome || 'Gestor Arena';
   const userRole = user?.perfil || '';
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try { await logout(); } catch { window.alert("Não foi possível encerrar a sessão. Tente novamente."); return; }
     clearSession();
     safeStorage.removeItem('arena_nome');
     window.location.href = '/login';

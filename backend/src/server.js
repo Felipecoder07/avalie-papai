@@ -6,13 +6,18 @@ const app = require('./app');
 const initDb = require('./config/init_db');
 
 // Servidor Node.js do Backend Arenix SaaS - Automatic OAuth Exchange
-const PORT = process.env.PORT || 3000;
 
 // Inicializa o banco de dados (Criação de tabelas)
 initDb();
 
 const { startSaaSCron } = require('./jobs/cronSaaS');
+const { validateEnvironment } = require('./config/envValidation');
 startSaaSCron();
+
+const PORT = process.env.PORT || 3000;
+
+// Validação Fail-fast de ambiente antes de inicializar o servidor
+validateEnvironment();
 
 // SPA Fallback - redireciona qualquer rota de página para o index.html do React
 app.use((req, res, next) => {

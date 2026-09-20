@@ -1,5 +1,6 @@
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import React, { useState, useEffect } from 'react';
+import QRCode from 'react-qr-code';
 import '../../assets/css/configuracoes.css';
 import '../../assets/css/pagamentos.css';
 
@@ -1524,11 +1525,22 @@ export function AdminAssinatura() {
                       border: '1px solid #e2e8f0'
                     }}
                   >
-                    <img
-                      src={pixData.qr_code || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pixData.copia_cola)}`}
-                      alt="QR Code Pix"
-                      style={{ width: '180px', height: '180px', display: 'block' }}
-                    />
+                    {pixData.qr_code ? (
+                      <img
+                        src={pixData.qr_code}
+                        alt="QR Code Pix"
+                        style={{ width: '180px', height: '180px', display: 'block' }}
+                      />
+                    ) : (
+                      <div style={{ width: '180px', height: '180px', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}>
+                        <QRCode
+                          value={pixData.copia_cola}
+                          size={160}
+                          style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                          viewBox={`0 0 160 160`}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 

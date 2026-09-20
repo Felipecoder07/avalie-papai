@@ -50,9 +50,11 @@ async function initialize() {
 let passwordHash;
 async function seed() {
   passwordHash ||= await bcrypt.hash(PASSWORD, 4);
-  for (const table of ['SessionMfa', 'MfaRecovery', 'MfaEnrollment', 'PaymentAllocations', 'GatewayCredits', 'RefundIntents', 'SecurityOutbox', 'PaymentIntents', 'AuthSessions', 'RecoveryChallenges', 'ExternalIdentities', 'ClientMemberships', 'GuestAccess', 'OAuthStates', 'OAuthCodesUsados', 'TransacoesGateway', 'Pagamentos', 'Reservas', 'Bloqueios', 'Quadras', 'Clientes', 'SessoesAtivas', 'Usuarios', 'Arenas']) {
+  await db.runAsync('PRAGMA foreign_keys=OFF');
+  for (const table of ['BookingContacts', 'BookingCancellations', 'SessionMfa', 'MfaRecovery', 'MfaEnrollment', 'PaymentAllocations', 'GatewayCredits', 'RefundIntents', 'SecurityOutbox', 'PaymentIntents', 'AuthSessions', 'RecoveryChallenges', 'ExternalIdentities', 'ClientMemberships', 'GuestAccess', 'OAuthStates', 'OAuthCodesUsados', 'TransacoesGateway', 'Pagamentos', 'Reservas', 'Bloqueios', 'Quadras', 'Clientes', 'SessoesAtivas', 'Usuarios', 'Arenas']) {
     await db.runAsync('DELETE FROM ' + table);
   }
+  await db.runAsync('PRAGMA foreign_keys=ON');
   await db.runAsync("INSERT OR REPLACE INTO ConfiguracoesSaaS(chave,valor) VALUES('manutencao_ativa','0'),('mp_webhook_secret',?),('mp_master_access_token','FIXTURE-MASTER-SECRET'),('mp_client_secret','FIXTURE-CLIENT-SECRET')", [WEBHOOK_SECRET]);
   await db.runAsync("INSERT INTO Arenas(id,nome,slug,status,chave_pix) VALUES(1,'Arena A','arena-a',1,'pix-a@example.test'),(2,'Arena B','arena-b',1,'pix-b@example.test')");
   await db.runAsync("INSERT INTO Clientes(id,tenant_id,nome,email,telefone,cpf) VALUES(1,1,'Owner','owner@example.test','11900000001','11111111111'),(2,1,'Third','third@example.test','11900000002','22222222222'),(3,2,'Foreign','foreign@example.test','11900000003','33333333333')");
@@ -60,8 +62,9 @@ async function seed() {
   for (const [id, role, tenant, client] of users) {
     await db.runAsync('INSERT INTO Usuarios(id,tenant_id,cliente_id,nome,email,perfil,senha_hash,ativo,two_factor_secret) VALUES(?,?,?,?,?,?,?,1,?)', [id,tenant,client,'User'+id,'u'+id+'@example.test',role,passwordHash,id === actors.master ? MFA_SECRET : null]);
   }
-  await db.runAsync("INSERT INTO Quadras(id,tenant_id,nome,preco_base,status) VALUES(1,1,'Court A',100,'Ativa'),(2,2,'Court B',100,'Ativa')");
-  await db.runAsync("INSERT INTO Reservas(id,tenant_id,cliente_id,quadra_id,data_reserva,hora_inicio,hora_fim,valor_total,status,status_pagamento,grupo_id) VALUES(1,1,1,1,'2099-12-01','10:00','11:00',100,'Pendente','Pendente','group-a'),(2,1,1,1,'2099-12-01','11:00','12:00',100,'Pendente','Pendente','group-a'),(3,2,3,2,'2099-12-01','10:00','11:00',100,'Pendente','Pendente','group-b')");
+  await db.runAsync('INSERT INTO ClientMemberships(usuario_id,tenant_id,cliente_id,verified) VALUES(2,1,1,1),(3,1,2,1),(8,2,3,1)');
+  await db.runAsync("INSERT INTO Quadras(id,tenant_id,nome,preco_base,status) VALUES(1,1,'Court A',10000,'Ativa'),(2,2,'Court B',10000,'Ativa')");
+  await db.runAsync("INSERT INTO Reservas(id,tenant_id,cliente_id,quadra_id,data_reserva,hora_inicio,hora_fim,valor_total,status,status_pagamento,grupo_id) VALUES(1,1,1,1,'2099-12-01','10:00','11:00',10000,'Pendente','Pendente','group-a'),(2,1,1,1,'2099-12-01','11:00','12:00',10000,'Pendente','Pendente','group-a'),(3,2,3,2,'2099-12-01','10:00','11:00',10000,'Pendente','Pendente','group-b')");
 }
 
 function totp() {
@@ -85,4 +88,4 @@ function signedWebhook(app, id, { secret = WEBHOOK_SECRET, timestamp = Date.now(
   return request(app).post('/api/pagamentos/gateway/webhook').query({ 'data.id': String(id) }).set('x-request-id', requestId).set('x-signature', `ts=${timestamp},v1=${digest}`).send({ action: 'payment.updated', data: { id: String(id) } });
 }
 const close = () => new Promise((resolve, reject) => db.close(error => error ? reject(error) : resolve()));
-module.exports = { db, initialize, seed, login, auth, actors, PASSWORD, signedWebhook, close };
+module.exports = { db, initialize, seed, login, auth, actors, PASSWORD, MFA_SECRET, WEBHOOK_SECRET, totp, signedWebhook, close };

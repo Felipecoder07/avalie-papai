@@ -1,4 +1,4 @@
-import { apiFetch as fetch } from './utils/apiFetch';
+import { apiFetch as fetch, logout } from './utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { MasterLayout } from './layouts/MasterLayout';
@@ -38,9 +38,9 @@ interface AdminSessionResult {
   error?: string;
 }
 
-async function fetchAdminSession(token: string): Promise<AdminSessionResult> {
+async function fetchAdminSession(): Promise<AdminSessionResult> {
   const res = await fetch('/api/auth/me', {
-    headers: { 'Authorization': `Bearer ${token}` }
+    headers: {}
   });
   const data = await res.json();
 
@@ -113,14 +113,10 @@ function AdminGuard({ children }: Readonly<{ children: React.ReactNode }>) {
   useEffect(() => {
     let active = true;
     const verifySession = async () => {
-      const token = safeStorage.getItem('courtmanager_token');
-      if (!token) {
-        if (active) navigate('/login', { replace: true });
-        return;
-      }
+
 
       try {
-        const result = await fetchAdminSession(token);
+        const result = await fetchAdminSession();
         if (active) {
           processAdminSessionResult(result, {
             setBlockedMsg,
@@ -134,15 +130,16 @@ function AdminGuard({ children }: Readonly<{ children: React.ReactNode }>) {
         const safeErr = String(err instanceof Error ? err.message : err).replace(/[\r\n]/g, '');
         console.error('Erro na validação do Admin:', safeErr);
         if (active) {
-          safeStorage.removeItem('courtmanager_token');
           safeStorage.removeItem('courtmanager_user');
           navigate('/login', { replace: true });
         }
       }
     };
 
+    const expired = () => { setIsAuth(false); navigate('/login', { replace: true }); };
+    window.addEventListener('cm:session-expired', expired);
     verifySession();
-    return () => { active = false; };
+    return () => { active = false; window.removeEventListener('cm:session-expired', expired); };
   }, [navigate]);
 
   if (checking) return <div className="flex min-h-screen items-center justify-center bg-cream text-charcoal">Verificando...</div>;
@@ -172,7 +169,6 @@ function AdminGuard({ children }: Readonly<{ children: React.ReactNode }>) {
             </button>
             <button
               onClick={() => {
-                localStorage.removeItem('courtmanager_token');
                 localStorage.removeItem('courtmanager_user');
                 window.location.href = '/login';
               }}

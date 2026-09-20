@@ -19,7 +19,6 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
-  const [showNewArenaPassword, setShowNewArenaPassword] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -30,8 +29,7 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
     endereco: '',
     plano_id: '',
     dia_vencimento: '10',
-    trial_dias: '14',
-    senha: ''
+    trial_dias: '14'
   });
 
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
@@ -40,10 +38,9 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
   const fetchArenas = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('courtmanager_token');
       const [resArenas, resPlanos] = await Promise.all([
-        fetch('/api/saas/arenas', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/saas/planos', { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch('/api/saas/arenas', { headers: {} }),
+        fetch('/api/saas/planos', { headers: {} })
       ]);
       const dataArenas = await resArenas.json();
       const dataPlanos = await resPlanos.json();
@@ -70,11 +67,9 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
     }
     setCreating(true);
     try {
-      const token = localStorage.getItem('courtmanager_token');
       const res = await fetch('/api/saas/arenas', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(newArena)
@@ -88,8 +83,7 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
           endereco: '',
           plano_id: planosSaaS[0] ? String(planosSaaS[0].id) : '1',
           dia_vencimento: '10',
-          trial_dias: '14',
-          senha: ''
+          trial_dias: '14'
         });
         fetchArenas();
       } else {
@@ -266,29 +260,7 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
               ))}
             </Select>
           </Field>
-          <Field label="Senha padrão do Admin">
-            <div style={{ position: 'relative', width: '100%' }}>
-              <Input 
-                type={showNewArenaPassword ? 'text' : 'password'} 
-                placeholder="Padrão: Arenix@2026" 
-                value={newArena.senha} 
-                onChange={(e) => setNewArena(prev => ({ ...prev, senha: e.target.value }))} 
-                style={{ paddingRight: '40px' }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowNewArenaPassword(!showNewArenaPassword)}
-                style={{
-                  position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)',
-                  display: 'flex', alignItems: 'center', zIndex: 5
-                }}
-                title={showNewArenaPassword ? 'Ocultar senha' : 'Ver senha'}
-              >
-                {showNewArenaPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </Field>
+          <p>O administrador receberá um convite por e-mail para ativar a conta e definir sua senha.</p>
         </div>
       </Modal>
 
@@ -298,10 +270,9 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
         onClose={() => setBlockTarget(null)}
         onConfirm={async (password) => {
           if (!blockTarget) return;
-          const token = localStorage.getItem('courtmanager_token');
           const res = await fetch(`/api/saas/arenas/${blockTarget.id}/status`, {
             method: 'PATCH',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: blockTarget.status === 0 ? 1 : 0, senha: password })
           });
           if (res.ok) {
@@ -326,10 +297,9 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
         onClose={() => setDeleteTarget(null)}
         onConfirm={async (password) => {
           if (!deleteTarget) return;
-          const token = localStorage.getItem('courtmanager_token');
           const res = await fetch(`/api/saas/arenas/${deleteTarget.id}`, {
             method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ senha_master: password })
           });
           if (res.ok) {

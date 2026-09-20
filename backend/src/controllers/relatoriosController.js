@@ -1,11 +1,20 @@
+const logger = require('../utils/safeLogger').forModule('relatoriosController');
 const db = require('../config/database');
 
-// Helper: formatar período com base em data_inicio e data_fim
 function getPeriodo(req) {
   const hoje = new Date().toISOString().split('T')[0];
   const primeiroDiaMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
   const inicio = req.query.data_inicio || primeiroDiaMes;
   const fim = req.query.data_fim || hoje;
+  
+  // Limita o intervalo de busca para evitar DoS (máximo 1 ano de intervalo)
+  const dataInicio = new Date(inicio);
+  const dataFim = new Date(fim);
+  const umAnoMs = 366 * 24 * 60 * 60 * 1000;
+  if ((dataFim - dataInicio) > umAnoMs) {
+    throw Object.assign(new Error('O intervalo do relatório não pode ser maior que 1 ano.'), { status: 400 });
+  }
+
   const quadra_id = req.query.quadra_id || null;
   return { inicio, fim, quadra_id };
 }
@@ -44,15 +53,16 @@ const relatorioFaturamento = async (req, res) => {
     `, params);
 
     const totais = reservas.reduce((acc, r) => {
-      acc.bruto += r.valor_total;
-      acc.pago += r.total_pago;
-      acc.pendente += Math.max(0, r.valor_total - r.total_pago);
+      acc.bruto += r.valor_total / 100;
+      acc.pago += r.total_pago / 100;
+      acc.pendente += Math.max(0, (r.valor_total - r.total_pago) / 100);
       return acc;
     }, { bruto: 0, pago: 0, pendente: 0 });
 
-    res.json({ reservas, totais, periodo: { inicio, fim } });
+    const formattedReservas = reservas.map(r => ({ ...r, valor_total: r.valor_total / 100, total_pago: r.total_pago / 100 }));
+    res.json({ reservas: formattedReservas, totais, periodo: { inicio, fim } });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao gerar relatório de faturamento.' });
   }
 };
@@ -113,7 +123,7 @@ const relatorioOcupacao = async (req, res) => {
 
     res.json({ quadras: resultado, taxaGeral, periodo: { inicio, fim, dias } });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao gerar relatório de ocupação.' });
   }
 };
@@ -146,9 +156,9 @@ const relatorioReservas = async (req, res) => {
     const totalCanceladas = reservas.filter(r => r.status === 'Cancelada').length;
     const totalPendentes = reservas.filter(r => r.status === 'Pendente').length;
 
-    res.json({ reservas, totais: { total: reservas.length, confirmadas: totalConfirmadas, canceladas: totalCanceladas, pendentes: totalPendentes }, periodo: { inicio, fim } });
+    res.json({ reservas: reservas.map(r => ({ ...r, valor_total: r.valor_total / 100 })), totais: { total: reservas.length, confirmadas: totalConfirmadas, canceladas: totalCanceladas, pendentes: totalPendentes }, periodo: { inicio, fim } });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao gerar relatório de reservas.' });
   }
 };
@@ -180,12 +190,12 @@ const relatorioInadimplencia = async (req, res) => {
       ORDER BY r.data_reserva DESC
     `, params);
 
-    const comSaldo = inadimplentes.map(r => ({ ...r, saldo_devedor: r.valor_total - r.total_pago })).filter(r => r.saldo_devedor > 0);
+    const comSaldo = inadimplentes.map(r => ({ ...r, saldo_devedor: (r.valor_total - r.total_pago) / 100, valor_total: r.valor_total / 100, total_pago: r.total_pago / 100 })).filter(r => r.saldo_devedor > 0);
     const totalDevido = comSaldo.reduce((acc, r) => acc + r.saldo_devedor, 0);
 
     res.json({ inadimplentes: comSaldo, totalDevido, periodo: { inicio, fim } });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao gerar relatório de inadimplência.' });
   }
 };
@@ -224,12 +234,12 @@ const relatorioCancelamentos = async (req, res) => {
       ORDER BY r.data_reserva DESC
     `, params);
 
-    const totalValorPerdido = cancelamentos.reduce((acc, r) => acc + r.valor_total, 0);
+    const totalValorPerdido = cancelamentos.reduce((acc, r) => acc + (r.valor_total / 100), 0);
     const totalEstornado = cancelamentos.filter(r => r.status_pagamento === 'Estornado').length;
 
-    res.json({ cancelamentos, totais: { total: cancelamentos.length, valorPerdido: totalValorPerdido, estornados: totalEstornado }, periodo: { inicio, fim } });
+    res.json({ cancelamentos: cancelamentos.map(r => ({ ...r, valor_total: r.valor_total / 100, total_pago: r.total_pago / 100 })), totais: { total: cancelamentos.length, valorPerdido: totalValorPerdido, estornados: totalEstornado }, periodo: { inicio, fim } });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao gerar relatório de cancelamentos.' });
   }
 };
@@ -255,10 +265,11 @@ const relatorioFormasPagamento = async (req, res) => {
       ORDER BY total_valor DESC
     `, quadra_id ? [inicio, fim, req.user.tenant_id, quadra_id] : [inicio, fim, req.user.tenant_id]);
 
-    const totalGeral = porMetodo.reduce((acc, m) => acc + m.total_valor, 0);
+    const totalGeral = porMetodo.reduce((acc, m) => acc + (m.total_valor / 100), 0);
     const resultado = porMetodo.map(m => ({
       ...m,
-      percentual: totalGeral > 0 ? Math.round((m.total_valor / totalGeral) * 100) : 0
+      total_valor: m.total_valor / 100,
+      percentual: totalGeral > 0 ? Math.round(((m.total_valor / 100) / totalGeral) * 100) : 0
     }));
 
     const transacoes = await db.allAsync(`
@@ -283,9 +294,9 @@ const relatorioFormasPagamento = async (req, res) => {
       ORDER BY p.registrado_em DESC
     `, quadra_id ? [inicio, fim, req.user.tenant_id, quadra_id] : [inicio, fim, req.user.tenant_id]);
 
-    res.json({ porMetodo: resultado, transacoes, totalGeral, periodo: { inicio, fim } });
+    res.json({ porMetodo: resultado, transacoes: transacoes.map(t => ({ ...t, valor: t.valor / 100 })), totalGeral, periodo: { inicio, fim } });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao gerar relatório de formas de pagamento.' });
   }
 };
@@ -330,7 +341,7 @@ const relatorioHorariosPico = async (req, res) => {
 
     res.json({ porHora: horasAtivas, maxPico, porDiaSemana, totalReservas: reservas.length, periodo: { inicio, fim } });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao gerar relatório de horários de pico.' });
   }
 };
@@ -339,7 +350,8 @@ const relatorioHorariosPico = async (req, res) => {
 const relatorioTopClientes = async (req, res) => {
   try {
     const { inicio, fim, quadra_id } = getPeriodo(req);
-    const limite = Number.parseInt(req.query.limite) || 20;
+    const parseLim = Number.parseInt(req.query.limite);
+    const limite = (!Number.isNaN(parseLim) && parseLim > 0) ? parseLim : 20;
 
     const clientes = await db.allAsync(`
       SELECT
@@ -358,20 +370,22 @@ const relatorioTopClientes = async (req, res) => {
       GROUP BY c.id, c.nome, c.telefone
       ORDER BY total_reservas DESC, valor_total_gerado DESC
       LIMIT ?
-    `, quadra_id ? [inicio, fim, quadra_id, limite] : [inicio, fim, limite]);
+    `, quadra_id ? [inicio, fim, req.user.tenant_id, quadra_id, limite] : [inicio, fim, req.user.tenant_id, limite]);
 
     const comSaldo = clientes.map((c, idx) => ({
       ...c,
       posicao: idx + 1,
-      saldo_devedor: Math.max(0, c.valor_total_gerado - c.total_pago),
-      ticket_medio: c.total_reservas > 0 ? c.valor_total_gerado / c.total_reservas : 0
+      valor_total_gerado: c.valor_total_gerado / 100,
+      total_pago: c.total_pago / 100,
+      saldo_devedor: Math.max(0, (c.valor_total_gerado - c.total_pago) / 100),
+      ticket_medio: c.total_reservas > 0 ? (c.valor_total_gerado / 100) / c.total_reservas : 0
     }));
 
     const totalFaturado = comSaldo.reduce((acc, c) => acc + c.valor_total_gerado, 0);
 
     res.json({ clientes: comSaldo, totalFaturado, periodo: { inicio, fim } });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao gerar relatório de top clientes.' });
   }
 };

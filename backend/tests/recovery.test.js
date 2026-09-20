@@ -1,88 +1,60 @@
 const request = require('supertest');
-const fs = require('fs');
-const path = require('path');
-const bcrypt = require('bcrypt');
-
-// Configura o ambiente como teste ANTES de carregar o banco e app
-process.env.NODE_ENV = 'test';
-
-const db = require('../src/config/database');
-const initDb = require('../src/config/init_db');
+const fixture = require('./helpers/securityFixture.cjs');
+const { db, actors } = fixture;
+vi.spyOn(require('../src/services/emailService'), 'sendEmail').mockResolvedValue(true);
 const app = require('../src/app');
 
-describe('Testes de Integração de Segurança — Fluxo de Recuperação de Senha', () => {
+beforeAll(fixture.initialize);
+beforeEach(fixture.seed);
+afterAll(fixture.close);
 
-  beforeAll(async () => {
-    // Inicializa o esquema de tabelas e sementes
-    initDb();
-    await new Promise(resolve => setTimeout(resolve, 1000));
+describe('Integration Tests — Recovery Flow (RecoveryChallenges)', () => {
 
-    // Insere dados de teste para o Usuário
-    await db.runAsync("INSERT OR IGNORE INTO Arenas (id, nome, status) VALUES (1, 'Arena Teste', 1)");
-    const hash = await bcrypt.hash('senhaAntiga123', 12);
-    await db.runAsync(`
-      INSERT OR IGNORE INTO Usuarios (id, tenant_id, nome, email, senha_hash, perfil) 
-      VALUES (99, 1, 'Usuario Recuperacao', 'recuperacao@test.com', ?, 'Administrador')
-    `, [hash]);
-  });
-
-  it('Deve responder sucesso genérico mesmo se o e-mail não estiver cadastrado (User Enumeration Protection)', async () => {
-    const res = await request(app)
-      .post('/api/auth/forgot-password')
-      .send({ email: 'inexistente@test.com' });
-
+  it('Deve responder sucesso genérico mesmo se o e-mail não estiver cadastrado', async () => {
+    const res = await request(app).post('/api/auth/forgot-password').send({ email: 'inexistente@test.com' });
     expect(res.statusCode).toBe(200);
-    expect(res.body).toHaveProperty('message', 'Se o e-mail informado estiver cadastrado, as instruções de recuperação foram enviadas.');
+    expect(res.body).toHaveProperty('message', 'Se o e-mail estiver cadastrado, enviamos as instrucoes de recuperacao.');
   });
 
-  it('Deve gerar token de redefinição no banco quando o e-mail for válido', async () => {
-    const res = await request(app)
-      .post('/api/auth/forgot-password')
-      .send({ email: 'recuperacao@test.com' });
-
+  it('Deve gerar desafio na tabela RecoveryChallenges quando o e-mail for válido', async () => {
+    const res = await request(app).post('/api/auth/forgot-password').send({ email: 'u1@example.test' });
     expect(res.statusCode).toBe(200);
-    expect(res.body).toHaveProperty('message', 'Se o e-mail informado estiver cadastrado, as instruções de recuperação foram enviadas.');
+    expect(res.body).toHaveProperty('message', 'Se o e-mail estiver cadastrado, enviamos as instrucoes de recuperacao.');
 
-    // Verifica no banco de dados se o token foi gerado e salvo
-    const user = await db.getAsync('SELECT reset_password_token, reset_password_expires FROM Usuarios WHERE id = 99');
-    expect(user.reset_password_token).not.toBeNull();
-    expect(user.reset_password_expires).not.toBeNull();
+    const challenge = await db.getAsync('SELECT * FROM RecoveryChallenges WHERE usuario_id=? AND purpose=? AND used=0', [actors.admin, 'password']);
+    expect(challenge).not.toBeNull();
+    expect(challenge.token_hash).toBeDefined();
+    expect(challenge.expires).toBeGreaterThan(Date.now());
   });
 
-  it('Deve impedir a redefinição se o token for incorreto ou inválido', async () => {
-    const res = await request(app)
-      .post('/api/auth/reset-password')
-      .send({
-        token: 'token-falso-e-errado-12345',
-        novaSenha: 'novaSenhaSegura123'
-      });
-
+  it('Deve impedir a redefinição se o token for incorreto ou expirado', async () => {
+    const res = await request(app).post('/api/auth/reset-password').send({ token: 'token-errado', novaSenha: 'NovaSenha#123' });
     expect(res.statusCode).toBe(400);
-    expect(res.body).toHaveProperty('error', 'Token de recuperação inválido ou expirado.');
+    expect(res.body).toHaveProperty('error', 'Token invalido ou expirado.');
   });
 
-  it('Deve redefinir a senha com sucesso quando o token for correto', async () => {
-    // Busca o token válido gerado na etapa anterior
-    const userBefore = await db.getAsync('SELECT reset_password_token FROM Usuarios WHERE id = 99');
-    const validToken = userBefore.reset_password_token;
+  it('Deve redefinir a senha com sucesso quando o token for correto, invalidando sessoes e consumindo o token', async () => {
+    const { createChallenge } = require('../src/services/recoveryService');
+    const token = await createChallenge(actors.admin, 'password');
 
-    const res = await request(app)
-      .post('/api/auth/reset-password')
-      .send({
-        token: validToken,
-        novaSenha: 'novaSenhaSuperSegura123'
-      });
+    // Make sure user has an active session
+    const session = await fixture.login(app, actors.admin);
+    expect((await fixture.auth(request(app).get('/api/auth/me'), session)).status).toBe(200);
 
+    const res = await request(app).post('/api/auth/reset-password').send({ token, novaSenha: 'NovaSenhaSegura#123' });
     expect(res.statusCode).toBe(200);
-    expect(res.body).toHaveProperty('message', 'Senha redefinida com sucesso!');
+    expect(res.body).toHaveProperty('message', 'Senha redefinida. Faca login novamente.');
 
-    // Verifica que o token de recuperação foi apagado (uso único)
-    const userAfter = await db.getAsync('SELECT reset_password_token, reset_password_expires, senha_hash FROM Usuarios WHERE id = 99');
-    expect(userAfter.reset_password_token).toBeNull();
-    expect(userAfter.reset_password_expires).toBeNull();
+    // Token must be consumed
+    const challengeAfter = await db.getAsync('SELECT used FROM RecoveryChallenges WHERE usuario_id=? AND purpose=?', [actors.admin, 'password']);
+    expect(challengeAfter.used).toBe(1);
 
-    // Verifica que o hash da senha foi atualizado e condiz com a nova senha
-    const isSamePassword = await bcrypt.compare('novaSenhaSuperSegura123', userAfter.senha_hash);
-    expect(isSamePassword).toBe(true);
+    // Old sessions must be revoked
+    expect((await fixture.auth(request(app).get('/api/auth/me'), session)).status).toBe(401);
+
+    // Can login with new password
+    const login = await request(app).post('/api/auth/login').send({ email: 'u1@example.test', senha: 'NovaSenhaSegura#123' });
+    expect(login.statusCode).toBe(200);
   });
+
 });

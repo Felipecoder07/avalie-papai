@@ -27,6 +27,17 @@ interface ClienteDetalhe extends Cliente {
   ultimasReservas: Reserva[];
 }
 
+interface VinculoPendente {
+  usuario_id: number;
+  cliente_id: number;
+  created_at: string;
+  cliente_nome: string;
+  cliente_telefone: string;
+  cliente_email: string | null;
+  usuario_nome: string;
+  usuario_email: string;
+}
+
 const formatPhone = (val: string) => {
   const clean = val.replace(/\D/g, '');
   if (clean.length === 0) return '';
@@ -323,6 +334,9 @@ export function AdminClientes() {
   const [loading, setLoading] = useState(true);
   const [abaAtiva, setAbaAtiva] = useState<'ativos' | 'arquivados'>('ativos');
 
+  const [pendingLinks, setPendingLinks] = useState<VinculoPendente[]>([]);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+
   // Modais
   const [activeModal, setActiveModal] = useState<'novo-cliente' | 'detalhe-cliente' | null>(null);
 
@@ -369,9 +383,50 @@ export function AdminClientes() {
     }
   };
 
+  const carregarVinculosPendentes = async () => {
+    try {
+      const res = await fetch(`/api/clientes/vinculos-pendentes`, { headers: {} });
+      if (res.ok) {
+        const data = await res.json();
+        setPendingLinks(data);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar vínculos pendentes:', err);
+    }
+  };
+
   useEffect(() => {
     carregarClientes(abaAtiva);
-  }, [token, abaAtiva]);
+    carregarVinculosPendentes();
+  }, [abaAtiva]);
+
+  const handleAprovarVinculo = async (usuario_id: number, cliente_id: number) => {
+    try {
+      const res = await fetch(`/api/clientes/vinculos-pendentes/${usuario_id}/${cliente_id}/aprovar`, {
+        method: 'POST',
+        headers: {}
+      });
+      if (!res.ok) throw new Error('Erro ao aprovar vínculo');
+      showToast('Vínculo aprovado com sucesso!', 'success');
+      carregarVinculosPendentes();
+    } catch (err) {
+      showToast('Erro ao aprovar vínculo', 'error');
+    }
+  };
+
+  const handleRejeitarVinculo = async (usuario_id: number, cliente_id: number) => {
+    try {
+      const res = await fetch(`/api/clientes/vinculos-pendentes/${usuario_id}/${cliente_id}/rejeitar`, {
+        method: 'POST',
+        headers: {}
+      });
+      if (!res.ok) throw new Error('Erro ao rejeitar vínculo');
+      showToast('Vínculo rejeitado!', 'success');
+      carregarVinculosPendentes();
+    } catch (err) {
+      showToast('Erro ao rejeitar vínculo', 'error');
+    }
+  };
 
   // Carregar Detalhes do Cliente
   useEffect(() => {
@@ -558,6 +613,26 @@ export function AdminClientes() {
         </div>
       )}
 
+      {pendingLinks.length > 0 && (
+        <div 
+          className="mb-4 bg-warning/10 border border-warning/20 rounded-xl p-4 flex items-center justify-between cursor-pointer hover:bg-warning/15 transition-colors"
+          onClick={() => setShowPendingModal(true)}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-warning/20 text-warning-text flex items-center justify-center font-bold">
+              !
+            </div>
+            <div>
+              <h4 className="text-warning-text font-bold text-sm">Vínculos de Atletas Pendentes ({pendingLinks.length})</h4>
+              <p className="text-xs text-warning-text/80">Existem atletas aguardando aprovação para vincular às contas locais.</p>
+            </div>
+          </div>
+          <button className="px-4 py-2 bg-warning text-white rounded-lg text-xs font-bold shadow-sm hover:opacity-90">
+            Revisar
+          </button>
+        </div>
+      )}
+
       {/* Tabs de Aba */}
       <div className="tab-bar" role="tablist">
         <button
@@ -679,6 +754,69 @@ export function AdminClientes() {
         onExcluir={handleExcluirCliente}
         onEditar={abrirEdicao}
       />
+
+      {/* Modal de Vínculos Pendentes */}
+      {showPendingModal && (
+        <div className="modal-overlay open">
+          <div className="modal" style={{ maxWidth: '650px' }}>
+            <div className="modal-header">
+              <h2 className="modal-title">Vínculos Pendentes de Aprovação</h2>
+              <button className="modal-close" onClick={() => setShowPendingModal(false)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+              <p className="text-xs text-muted mb-4">
+                Estes atletas solicitaram vínculo aos perfis de clientes locais da sua arena. 
+                Aprove os vínculos apenas se tiver certeza de que se trata da mesma pessoa.
+              </p>
+              
+              {pendingLinks.length === 0 ? (
+                <div className="text-center py-6 text-muted text-sm">
+                  Nenhum vínculo pendente no momento.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {pendingLinks.map(link => (
+                    <div key={`${link.usuario_id}-${link.cliente_id}`} className="border border-edge rounded-xl p-4 bg-surface flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex flex-col gap-1 text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-charcoal">Atleta (App):</span>
+                          <span className="text-muted">{link.usuario_nome} ({link.usuario_email})</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-charcoal">Cliente Local:</span>
+                          <span className="text-muted">{link.cliente_nome} ({link.cliente_telefone || 'Sem telefone'})</span>
+                        </div>
+                        <div className="text-[11px] text-muted/70 mt-1">
+                          Solicitado em: {new Date(link.created_at || Date.now()).toLocaleString('pt-BR')}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => handleRejeitarVinculo(link.usuario_id, link.cliente_id)}
+                          className="px-3 py-1.5 rounded-lg border border-danger/30 text-danger text-xs font-semibold hover:bg-danger/10 transition"
+                        >
+                          Rejeitar
+                        </button>
+                        <button 
+                          onClick={() => handleAprovarVinculo(link.usuario_id, link.cliente_id)}
+                          className="px-3 py-1.5 rounded-lg bg-success text-white text-xs font-semibold hover:opacity-90 shadow-sm transition"
+                        >
+                          Aprovar Vínculo
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn-ghost" type="button" onClick={() => setShowPendingModal(false)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

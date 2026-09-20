@@ -148,7 +148,6 @@ const AdminPagamentosKPIs: React.FC<AdminPagamentosKPIsProps> = ({ dataFiltro, k
 };
 
 export function AdminPagamentos() {
-  const token = localStorage.getItem('courtmanager_token');
 
   // KPIs
   const [kpis, setKpis] = useState<KPIResumo | null>(null);
@@ -193,12 +192,11 @@ export function AdminPagamentos() {
 
   // Carregar KPIs
   const carregarKPIs = async (overrideData?: string) => {
-    if (!token) return;
     const dt = overrideData !== undefined ? overrideData : dataFiltro;
     try {
       const url = dt ? `/api/pagamentos/resumo?data=${encodeURIComponent(dt)}` : '/api/pagamentos/resumo';
       const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         const data = await res.json();
@@ -211,7 +209,6 @@ export function AdminPagamentos() {
 
   // Carregar reservas de faturamento
   const carregarReservas = async () => {
-    if (!token) return;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -226,7 +223,7 @@ export function AdminPagamentos() {
       }
 
       const res = await fetch(`/api/pagamentos/reservas?${params.toString()}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         const data = await res.json();
@@ -244,11 +241,11 @@ export function AdminPagamentos() {
 
   useEffect(() => {
     carregarKPIs(dataFiltro);
-  }, [token, tabAtiva, dataFiltro]);
+  }, [tabAtiva, dataFiltro]);
 
   useEffect(() => {
     carregarReservas();
-  }, [token, tabAtiva, dataFiltro]);
+  }, [tabAtiva, dataFiltro]);
 
   // Debounce para busca textual
   useEffect(() => {
@@ -260,11 +257,10 @@ export function AdminPagamentos() {
 
   // Buscar histórico de pagamentos individuais ao abrir modal de pagamento ou estorno
   const carregarHistoricoPagamentos = async (reservaId: number) => {
-    if (!token) return;
     setLoadingHistorico(true);
     try {
       const res = await fetch(`/api/pagamentos/reserva/${reservaId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         const data = await res.json();
@@ -295,7 +291,7 @@ export function AdminPagamentos() {
     const checkStatus = async () => {
       try {
         const res = await fetch(`/api/pagamentos/gateway/status/${reservaAtual.id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: {}
         });
         if (res.ok) {
           const data = await res.json();
@@ -322,7 +318,7 @@ export function AdminPagamentos() {
 
     intervalId = setInterval(checkStatus, 3000);
     return () => clearInterval(intervalId);
-  }, [showPixCobranca, reservaAtual, token]);
+  }, [showPixCobranca, reservaAtual]);
 
   const handleSimularPagamentoPix = async () => {
     if (!gatewayRef) return;
@@ -336,9 +332,7 @@ export function AdminPagamentos() {
       const res = await fetch('/api/pagamentos/gateway/simular-pagamento', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+          'Content-Type': 'application/json',},
         body: JSON.stringify(payload)
       });
       const data = await res.json();
@@ -382,7 +376,7 @@ export function AdminPagamentos() {
 
   // Salvar Pagamento
   const handleSalvarPagamento = async () => {
-    if (!reservaAtual || !rpValor || !rpMetodo || !token) {
+    if (!reservaAtual || !rpValor || !rpMetodo) {
       showToast('Por favor, preencha todos os campos obrigatórios.', 'error');
       return;
     }
@@ -397,9 +391,7 @@ export function AdminPagamentos() {
         const res = await fetch('/api/pagamentos/gateway/cobranca', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
+            'Content-Type': 'application/json',},
           body: JSON.stringify({
             reserva_id: reservaAtual.id,
             metodo,
@@ -429,9 +421,7 @@ export function AdminPagamentos() {
       const res = await fetch('/api/pagamentos', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+          'Content-Type': 'application/json',},
         body: JSON.stringify({
           reserva_id: reservaAtual.id,
           valor: valorNumerico,
@@ -454,7 +444,7 @@ export function AdminPagamentos() {
 
   // Confirmar Estorno
   const handleConfirmarEstorno = async () => {
-    if (!pagamentoEstornoId || !estpValor || !estpMotivo || !token) {
+    if (!pagamentoEstornoId || !estpValor || !estpMotivo) {
       showToast('A justificativa e o valor são obrigatórios.', 'error');
       return;
     }
@@ -463,9 +453,7 @@ export function AdminPagamentos() {
       const res = await fetch('/api/pagamentos/estorno', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+          'Content-Type': 'application/json',},
         body: JSON.stringify({
           pagamento_id: pagamentoEstornoId,
           valor: parseCurrencyToFloat(estpValor),

@@ -1,10 +1,11 @@
+const logger = require('../utils/safeLogger').forModule('pagamentosController');
 const db=require('../config/database');
 const logAuditEvent=require('../utils/auditLogger');
 const {getTodayString,getLocalTimeString}=require('../utils/dateUtils');
 const {cents,httpError}=require('../utils/security');
 const {recompute}=require('../services/paymentLedgerService');
 const {manualMethod}=require('../services/manualPaymentService');
-const safe=fn=>async(req,res)=>{try{await fn(req,res)}catch(e){res.status(e.status||500).json({error:e.status?e.message:'Falha na operacao financeira.'})}};
+const safe=fn=>async(req,res)=>{try{await fn(req,res)}catch(e){res.status(e.status||500).json({error: require('../utils/security').publicError(e, 'Falha na operacao financeira.')})}};
 const registrarPagamento=safe(async(req,res)=>{
  const amount=cents(req.body.valor),method=manualMethod(req.body.metodo),tenant=req.user.tenant_id,id=req.body.reserva_id;
  const result=await db.transaction(async()=>{
@@ -12,11 +13,11 @@ const registrarPagamento=safe(async(req,res)=>{
   if(!r) throw httpError(404,'Reserva nao encontrada.');
   if(r.status==='Cancelada') throw httpError(400,'Reserva cancelada.');
   const paid=await db.getAsync('SELECT COALESCE(SUM(valor),0) AS total FROM Pagamentos WHERE reserva_id=?',[id]);
-  if(amount>cents(r.valor_total,{zero:true})-Math.round(paid.total*100)) throw httpError(400,'Valor acima do saldo devedor.');
-  const inserted=await db.runAsync('INSERT INTO Pagamentos(reserva_id,valor,metodo,registrado_por) VALUES(?,?,?,?)',[id,amount/100,method,req.user.id]);
+  if(amount>r.valor_total-paid.total) throw httpError(400,'Valor acima do saldo devedor.');
+  const inserted=await db.runAsync('INSERT INTO Pagamentos(reserva_id,valor,metodo,registrado_por) VALUES(?,?,?,?)',[id,amount,method,req.user.id]);
   return {pagamento_id:inserted.lastID,...await recompute(id)};
  });
- logAuditEvent(req.user.id,'Pagamento manual','Reserva: '+id+', valor: '+amount/100,req.ip);
+ logAuditEvent(req.user.id,'Pagamento manual','Reserva: '+id+', valor: '+amount,req.ip);
  res.status(201).json({message:'Pagamento registrado.',pagamento_id:result.pagamento_id,saldo_devedor:result.saldoDevedor,status_pagamento:result.novoStatus});
 });
 const aplicarDesconto=safe(async(req,res)=>{
@@ -28,12 +29,12 @@ const aplicarDesconto=safe(async(req,res)=>{
   const r=await db.getAsync('SELECT * FROM Reservas WHERE id=? AND tenant_id=?',[req.body.reserva_id,req.user.tenant_id]);
   if(!r) throw httpError(404,'Reserva nao encontrada.');
   const paid=await db.getAsync('SELECT COALESCE(SUM(valor),0) AS total FROM Pagamentos WHERE reserva_id=?',[r.id]);
-  const total=Math.round(cents(r.valor_total,{zero:true})*(100-percent)/100);
-  if(total<Math.round(paid.total*100)||r.status==='Cancelada') throw httpError(400,'Desconto abaixo do recebido ou reserva cancelada.');
+  const total=Math.round(r.valor_total*(100-percent)/100);
+  if(total<paid.total||r.status==='Cancelada') throw httpError(400,'Desconto abaixo do recebido ou reserva cancelada.');
   const open=await db.getAsync("SELECT id FROM TransacoesGateway WHERE reserva_id=? AND status='Pendente'",[r.id]);
   if(open) throw httpError(409,'Existe cobranca online pendente.');
-  await db.runAsync('UPDATE Reservas SET valor_total=? WHERE id=?',[total/100,r.id]);
-  return {novo_valor_total:total/100,...await recompute(r.id)};
+  await db.runAsync('UPDATE Reservas SET valor_total=? WHERE id=?',[total,r.id]);
+  return {novo_valor_total:total,...await recompute(r.id)};
  });
  res.json({message:'Desconto aplicado.',novo_valor_total:result.novo_valor_total,saldo_devedor:result.saldoDevedor});
 });
@@ -46,9 +47,9 @@ const registrarEstorno=safe(async(req,res)=>{
   const online=await db.getAsync("SELECT id FROM TransacoesGateway WHERE reserva_id IN (SELECT id FROM Reservas WHERE id=? OR (grupo_id=? AND tenant_id=?))",[r.id,r.grupo_id,r.tenant_id]);
   if(online) throw httpError(409,'Pagamento online: use o cancelamento com devolucao pelo provedor.');
   const paid=await db.getAsync('SELECT COALESCE(SUM(valor),0) AS total FROM Pagamentos WHERE reserva_id=?',[r.id]);
-  const amount=req.body.valor===undefined?Math.round(paid.total*100):cents(req.body.valor);
-  if(amount<=0||amount>Math.round(paid.total*100)) throw httpError(400,'Valor acima do saldo estornavel.');
-  await db.runAsync('INSERT INTO Pagamentos(reserva_id,valor,metodo,registrado_por) VALUES(?,?,?,?)',[r.id,-amount/100,'Estorno',req.user.id]);
+  const amount=req.body.valor===undefined?paid.total:cents(req.body.valor);
+  if(amount<=0||amount>paid.total) throw httpError(400,'Valor acima do saldo estornavel.');
+  await db.runAsync('INSERT INTO Pagamentos(reserva_id,valor,metodo,registrado_por) VALUES(?,?,?,?)',[r.id,-amount,'Estorno',req.user.id]);
   return recompute(r.id);
  });
  res.json({message:'Estorno manual registrado.',saldo_devedor:result.saldoDevedor,status_pagamento:result.novoStatus});
@@ -185,7 +186,7 @@ const resumoPagamentos = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao buscar resumo de pagamentos.' });
   }
 };
@@ -245,7 +246,7 @@ const listarReservasPagamentos = async (req, res) => {
 
     res.json(comSaldo);
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao listar reservas para pagamentos.' });
   }
 };

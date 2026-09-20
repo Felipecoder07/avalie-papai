@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('arenasController');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
 
@@ -6,18 +7,23 @@ const getMinhaArena = async (req, res) => {
   const tenant_id = req.user.tenant_id;
   
   try {
-    const arena = await db.getAsync(`SELECT * FROM Arenas WHERE id = ?`, [tenant_id]);
+    const arena = await db.getAsync(`SELECT id, nome, endereco, telefone, email, slug, status,
+      notif_reserva_email, notif_reserva_whatsapp, notif_cancelamento_email, notif_pagamento_email,
+      alerta_pagamento_minutos, horario_abertura, horario_fechamento, chave_pix, titular_pix, cidade_pix,
+      foto_capa, fuso_horario, plano_id, dia_vencimento, trial_expira_em, ciclo_cobranca,
+      gateway_device_id, gateway_public_key, criado_em,
+      CASE WHEN gateway_access_token IS NOT NULL AND TRIM(gateway_access_token) != '' THEN 1 ELSE 0 END AS gateway_connected
+      FROM Arenas WHERE id = ?`, [tenant_id]);
     
     if (!arena) {
       return res.status(404).json({ error: 'Arena não encontrada.' });
     }
     
     // A chave privada é usada somente no servidor, inclusive na tela de configurações.
-    const publicArena = { ...arena, gateway_connected: Boolean(arena.gateway_access_token?.trim()) };
-    delete publicArena.gateway_access_token;
+    const publicArena = { ...arena, gateway_connected: Boolean(arena.gateway_connected) };
     res.json(publicArena);
   } catch (error) {
-    console.error('Erro ao buscar arena:', error);
+    logger.error('Erro ao buscar arena:', error);
     res.status(500).json({ error: 'Erro ao buscar dados da arena.' });
   }
 };
@@ -71,7 +77,7 @@ const atualizarMinhaArena = async (req, res) => {
     logAuditEvent(admin_id, 'Atualização de Arena', `Editou os dados e configurações da arena ID ${tenant_id}`, ip);
     res.json({ message: 'Dados da arena atualizados com sucesso.' });
   } catch (error) {
-    console.error('Erro ao atualizar arena:', error);
+    logger.error('Erro ao atualizar arena:', error);
     res.status(500).json({ error: 'Erro ao salvar os dados da arena.' });
   }
 };
@@ -112,7 +118,7 @@ const uploadFotoCapa = async (req, res) => {
       foto_capa: relativeUrl
     });
   } catch (error) {
-    console.error('Erro no upload da foto de capa:', error);
+    logger.error('Erro no upload da foto de capa:', error);
     res.status(400).json({ error: 'Imagem invalida ou impossivel de processar.' });
   }
 };

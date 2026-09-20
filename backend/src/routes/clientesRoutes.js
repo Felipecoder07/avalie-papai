@@ -1,10 +1,26 @@
+const { requirePermission } = require('../utils/permissions');
 const express = require('express');
 const router = express.Router();
-const { listarClientes, criarCliente, obterCliente, atualizarCliente, excluirCliente, arquivarCliente, desarquivarCliente } = require('../controllers/clientesController');
-const { verifyToken, requireRole } = require('../middlewares/auth');
+const { 
+  listarClientes, 
+  criarCliente, 
+  obterCliente, 
+  atualizarCliente, 
+  excluirCliente, 
+  arquivarCliente, 
+  desarquivarCliente, 
+  listarVinculosPendentes, 
+  aprovarVinculo, 
+  rejeitarVinculo 
+} = require('../controllers/clientesController');
+const { verifyToken } = require('../middlewares/auth');
 
 router.use(verifyToken);
-router.use(requireRole(require('../utils/permissions').staff));
+router.use(requirePermission('clients.manage'));
+router.get('/vinculos-pendentes', listarVinculosPendentes);
+router.post('/vinculos-pendentes/:usuario_id/:cliente_id/aprovar', aprovarVinculo);
+router.post('/vinculos-pendentes/:usuario_id/:cliente_id/rejeitar', rejeitarVinculo);
+
 router.get('/', listarClientes);
 router.post('/', criarCliente);
 router.get('/:id', obterCliente);

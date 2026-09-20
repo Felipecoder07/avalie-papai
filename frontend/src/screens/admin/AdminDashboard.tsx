@@ -114,19 +114,17 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [loadingGrade, setLoadingGrade] = useState(true);
 
-  const token = localStorage.getItem('courtmanager_token');
 
   const formatCurrency = (val: number) => {
     return 'R$ ' + val.toFixed(2).replace('.', ',');
   };
 
   useEffect(() => {
-    if (!token) return;
 
     const fetchDashboard = async () => {
       try {
         const res = await fetch('/api/dashboard/resumo', {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: {}
         });
         
         if (res.ok) {
@@ -145,8 +143,7 @@ export function AdminDashboard() {
         const tzOffset = new Date().getTimezoneOffset() * 60000;
         const hoje = new Date(Date.now() - tzOffset).toISOString().split('T')[0];
         const res = await fetch(`/api/reservas/grade?data=${hoje}`, {
-          headers: { 
-            'Authorization': `Bearer ${token}`,
+          headers: {
             'Cache-Control': 'no-store'
           }
         });
@@ -163,7 +160,7 @@ export function AdminDashboard() {
 
     fetchDashboard();
     fetchGrade();
-  }, [token]);
+  }, []);
 
   if (loading) {
     return (

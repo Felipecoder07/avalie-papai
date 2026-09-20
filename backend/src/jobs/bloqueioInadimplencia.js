@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('bloqueioInadimplencia');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
 
@@ -43,10 +44,10 @@ async function executarBloqueioInadimplencia() {
       bloqueadasCount++;
     }
 
-    console.log(`[Job Cron] Bloqueio por inadimplência concluído. Arenas bloqueadas: ${bloqueadasCount}`);
+    logger.log(`[Job Cron] Bloqueio por inadimplência concluído. Arenas bloqueadas: ${bloqueadasCount}`);
     return { processadas: arenasInadimplentes.length, bloqueadas: bloqueadasCount, diasTolerancia };
   } catch (error) {
-    console.error('[Job Cron Error] Falha ao executar bloqueio por inadimplência:', error);
+    logger.error('[Job Cron Error] Falha ao executar bloqueio por inadimplência:', error);
     throw error;
   }
 }

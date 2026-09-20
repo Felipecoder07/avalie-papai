@@ -1,5 +1,7 @@
+const logger = require('../utils/safeLogger').forModule('quadrasController');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
+const { cents } = require('../utils/security');
 
 // Listar quadras filtrando pelo tenant do usuário logado
 const listarQuadras = async (req, res) => {
@@ -27,17 +29,17 @@ const listarQuadras = async (req, res) => {
 
       const normalizedModalidades = (Array.isArray(modalidades) ? modalidades : []).map(m => {
         if (typeof m === 'string') {
-          return { nome: m, preco: q.preco_base || 80 };
+          return { nome: m, preco: (q.preco_base != null ? q.preco_base : 8000) / 100 };
         }
-        return { nome: m.nome, preco: Number(m.preco != null ? m.preco : q.preco_base || 80) };
+        return { nome: m.nome, preco: Number(m.preco != null ? m.preco : q.preco_base || 8000) / 100 };
       });
 
-      return { ...q, modalidades: normalizedModalidades };
+      return { ...q, preco_base: (q.preco_base != null ? q.preco_base : 8000) / 100, modalidades: normalizedModalidades };
     });
 
     res.json(formatted);
   } catch (error) {
-    console.error('Erro ao buscar quadras:', error);
+    logger.error('Erro ao buscar quadras:', error);
     res.status(500).json({ error: 'Erro ao buscar quadras.' });
   }
 };
@@ -75,13 +77,13 @@ const criarQuadra = async (req, res) => {
       }
     }
 
-    const basePrice = preco_base != null ? Number(preco_base) : 80;
+    const basePrice = preco_base != null ? cents(preco_base) : 8000;
 
     let modalList = [];
     if (Array.isArray(modalidades) && modalidades.length > 0) {
       modalList = modalidades.map(m => {
         if (typeof m === 'string') return { nome: m, preco: basePrice };
-        return { nome: m.nome, preco: Number(m.preco != null ? m.preco : basePrice) };
+        return { nome: m.nome, preco: m.preco != null ? cents(m.preco) : basePrice };
       });
     } else {
       modalList = tipo === 'Areia'
@@ -122,7 +124,7 @@ const criarQuadra = async (req, res) => {
       status: 'Ativa' 
     });
   } catch (error) {
-    console.error('Erro ao criar quadra:', error);
+    logger.error('Erro ao criar quadra:', error);
     res.status(500).json({ error: 'Erro ao criar quadra.' });
   }
 };
@@ -140,13 +142,13 @@ const atualizarQuadra = async (req, res) => {
       return res.status(404).json({ error: 'Quadra não encontrada.' });
     }
 
-    const basePrice = preco_base != null ? Number(preco_base) : 80;
+    const basePrice = preco_base != null ? cents(preco_base) : 8000;
 
     let modalList = [];
     if (Array.isArray(modalidades) && modalidades.length > 0) {
       modalList = modalidades.map(m => {
         if (typeof m === 'string') return { nome: m, preco: basePrice };
-        return { nome: m.nome, preco: Number(m.preco != null ? m.preco : basePrice) };
+        return { nome: m.nome, preco: m.preco != null ? cents(m.preco) : basePrice };
       });
     } else {
       modalList = tipo === 'Areia'
@@ -171,7 +173,7 @@ const atualizarQuadra = async (req, res) => {
 
     res.json({ message: 'Quadra atualizada com sucesso.' });
   } catch (error) {
-    console.error('Erro ao atualizar quadra:', error);
+    logger.error('Erro ao atualizar quadra:', error);
     res.status(500).json({ error: 'Erro ao atualizar quadra.' });
   }
 };
@@ -214,7 +216,7 @@ const alterarStatusQuadra = async (req, res) => {
     logAuditEvent(req.user.id, 'Status de Quadra', `Alterou o status da quadra "${quadra.nome || quadraId}" para ${status}`, req.ip);
     res.json({ message: `Quadra marcada como ${status}` });
   } catch (error) {
-    console.error('Erro ao alterar status:', error);
+    logger.error('Erro ao alterar status:', error);
     res.status(500).json({ error: 'Erro interno ao alterar status.' });
   }
 };
@@ -236,7 +238,7 @@ const criarBloqueio = async (req, res) => {
 
     res.status(201).json({ message: 'Bloqueio criado com sucesso', id: insert.lastID });
   } catch (error) {
-    console.error('Erro ao criar bloqueio:', error);
+    logger.error('Erro ao criar bloqueio:', error);
     res.status(500).json({ error: 'Erro interno ao criar bloqueio.' });
   }
 };
@@ -273,7 +275,7 @@ const deletarQuadra = async (req, res) => {
       action: 'hard_deleted'
     });
   } catch (error) {
-    console.error('Erro ao excluir quadra:', error);
+    logger.error('Erro ao excluir quadra:', error);
     res.status(500).json({ error: 'Erro interno ao excluir quadra.' });
   }
 };

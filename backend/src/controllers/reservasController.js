@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('reservasController');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
 const { getTodayString, getLocalTimeString } = require('../utils/dateUtils');
@@ -14,148 +15,63 @@ const listarGrade = async (req, res) => {
     const tenant_id = req.user.tenant_id;
 
     // Pegar todas as quadras ativas
-    const quadras = await db.allAsync('SELECT * FROM Quadras WHERE status = "Ativa" AND tenant_id = ?', [tenant_id]);
+    const quadras = await db.allAsync('SELECT id,nome,tipo,modalidades,preco_base,hora_abertura,hora_fechamento,status FROM Quadras WHERE status = "Ativa" AND tenant_id = ?', [tenant_id]);
 
     // Pegar reservas confirmadas/pendentes/parciais do intervalo
     const reservas = await db.allAsync(`
-      SELECT r.*, c.nome as cliente_nome,
+      SELECT r.id,r.cliente_id,r.quadra_id,r.data_reserva,r.hora_inicio,r.hora_fim,r.valor_total,r.status,r.status_pagamento,r.esporte,r.grupo_id,COALESCE(bc.nome,c.nome) as cliente_nome,
              COALESCE((SELECT SUM(valor) FROM Pagamentos WHERE reserva_id = r.id), 0) as valor_pago
       FROM Reservas r 
-      LEFT JOIN Clientes c ON r.cliente_id = c.id
+      LEFT JOIN Clientes c ON r.cliente_id = c.id AND c.tenant_id=r.tenant_id
+      LEFT JOIN BookingContacts bc ON bc.grupo_id=r.grupo_id AND bc.tenant_id=r.tenant_id
       WHERE r.data_reserva >= ? AND r.data_reserva <= ? AND r.status != 'Cancelada' AND r.tenant_id = ?
     `, [inicio, fim, tenant_id]);
 
     // Pegar bloqueios do intervalo
     const bloqueios = await db.allAsync(`
-      SELECT b.* FROM Bloqueios b
+      SELECT b.id,b.quadra_id,b.data_bloqueio,b.hora_inicio,b.hora_fim,b.motivo FROM Bloqueios b
       JOIN Quadras q ON b.quadra_id = q.id
       WHERE b.data_bloqueio >= ? AND b.data_bloqueio <= ? AND q.tenant_id = ?
     `, [inicio, fim, tenant_id]);
 
-    res.json({ quadras, reservas, bloqueios });
+    const formattedQuadras = quadras.map(q => {
+      let mods = q.modalidades;
+      try { if (typeof mods === 'string') mods = JSON.parse(mods); } catch {}
+      if (!Array.isArray(mods)) mods = [];
+      return { 
+        ...q, 
+        preco_base: (q.preco_base || 0) / 100, 
+        modalidades: mods.map(m => ({ ...m, preco: (m.preco || 0) / 100 })) 
+      };
+    });
+
+    const formattedReservas = reservas.map(r => ({
+      ...r,
+      valor_total: (r.valor_total || 0) / 100,
+      valor_pago: (r.valor_pago || 0) / 100
+    }));
+
+    res.json({ quadras: formattedQuadras, reservas: formattedReservas, bloqueios });
   } catch (error) {
-    console.error('Erro ao listar grade:', error);
+    logger.error('Erro ao listar grade:', error);
     res.status(500).json({ error: 'Erro interno do servidor.' });
   }
 };
 
-function calcularPrecoReserva(quadra, esporte, hora_inicio, hora_fim, valorTotalInformado) {
-  if (valorTotalInformado !== undefined && valorTotalInformado !== null && valorTotalInformado !== '') {
-    return Math.max(0, Number(valorTotalInformado));
-  }
-
-  const [hI, mI] = hora_inicio.split(':').map(Number);
-  const [hF, mF] = hora_fim.split(':').map(Number);
-  let precoHora = quadra.preco_base || 80;
-
-  if (quadra.modalidades) {
-    try {
-      const parsed = typeof quadra.modalidades === 'string' ? JSON.parse(quadra.modalidades) : quadra.modalidades;
-      if (Array.isArray(parsed)) {
-        const match = parsed.find(m => (typeof m === 'object' ? m.nome : m) === esporte);
-        if (match && typeof match === 'object' && match.preco != null && Number(match.preco) > 0) {
-          precoHora = Number(match.preco);
-        }
-      }
-    } catch {
-      // Ignorar erro de parsing de modalidades
-    }
-  }
-
-  const duracaoHoras = (hF + mF / 60) - (hI + mI / 60);
-  return precoHora * duracaoHoras;
-}
-
-async function processarPagamentoBalcao(reservaId, valor_total, pagamento, usuario_id, ip) {
-  if (!pagamento || !pagamento.registrar || valor_total <= 0) {
-    return valor_total === 0 ? 'Pago' : 'Pendente';
-  }
-
-  const valorPago = Math.max(0, Number(pagamento.valor || valor_total));
-  const metodoPago = pagamento.metodo || 'Dinheiro';
-  
-  await db.runAsync(`
-    INSERT INTO Pagamentos (reserva_id, valor, metodo, registrado_por)
-    VALUES (?, ?, ?, ?)
-  `, [reservaId, valorPago, metodoPago, usuario_id]);
-
-  const statusPagamento = valorPago >= valor_total ? 'Pago' : 'Parcial';
-  await db.runAsync(`UPDATE Reservas SET status_pagamento = ? WHERE id = ?`, [statusPagamento, reservaId]);
-
-  logAuditEvent(
-    usuario_id,
-    'Pagamento Balcão',
-    `Pagamento de R$ ${valorPago.toFixed(2)} registrado via '${metodoPago}' para Reserva ID #${reservaId}.`,
-    ip
-  );
-
-  return statusPagamento;
-}
-
-async function dispararEmailConfirmacao(tenant_id, cliente_id, quadra_id, data_reserva, hora_inicio, hora_fim, valor_total) {
-  try {
-    const client = await db.getAsync('SELECT nome, email FROM Clientes WHERE id = ?', [cliente_id]);
-    const arena = await db.getAsync('SELECT nome FROM Arenas WHERE id = ?', [tenant_id]);
-    const quadraObj = await db.getAsync('SELECT nome FROM Quadras WHERE id = ?', [quadra_id]);
-    
-    if (client && client.email) {
-      const { sendEmail } = require('../services/emailService');
-      const subject = `Reserva Confirmada - ${arena ? arena.nome : 'Arenix'}`;
-      const html = `
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6;">
-          <h2 style="color: #2F855A;">Olá, ${client.nome}! 🎉</h2>
-          <p>Temos uma ótima notícia! Sua reserva foi agendada e confirmada com sucesso.</p>
-          <div style="background-color: #F7FAFC; border: 1px solid #E2E8F0; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <strong>Detalhes do agendamento:</strong><br />
-            📅 <strong>Data:</strong> ${data_reserva.split('-').reverse().join('/')}<br />
-            🕒 <strong>Horário:</strong> ${hora_inicio} às ${hora_fim}<br />
-            🎾 <strong>Quadra:</strong> ${quadraObj ? quadraObj.nome : 'Quadra Principal'}<br />
-            💰 <strong>Valor Total:</strong> R$ ${valor_total.toFixed(2).replace('.', ',')}
-          </div>
-          <p>Agradecemos a preferência! Nos vemos na quadra.</p>
-          <hr style="border: 0; border-top: 1px solid #E2E8F0; margin: 20px 0;" />
-          <p style="font-size: 0.8em; color: #A0AEC0;">Esta é uma mensagem automática enviada por Arenix CourtManager em nome de ${arena ? arena.nome : 'sua Arena'}.</p>
-        </div>
-      `;
-      await sendEmail(client.email, subject, html);
-    }
-  } catch (e) {
-    console.error('[SMTP] Erro ao disparar e-mail de confirmação:', e.message);
-  }
-}
-
 const criarReserva=async(req,res)=>{
  try {
-  const {cents,httpError}=require('../utils/security');
-  const tenant=req.user.tenant_id,item=req.body;
-  const result=await db.transaction(async()=>{
-   const court=await require('../services/bookingService').validateSlot(tenant,item);
-   const client=await db.getAsync('SELECT id FROM Clientes WHERE id=? AND tenant_id=? AND ativo=1',[item.cliente_id,tenant]);
-   if(!client) throw httpError(404,'Cliente nao pertence a esta arena.');
-   const computed=Math.round(calcularPrecoReserva(court,item.esporte,item.hora_inicio,item.hora_fim)*100);
-   let total=computed;
-   if(item.valor_total!==undefined && cents(item.valor_total,{zero:true})!==computed){
-    total=cents(item.valor_total,{zero:true});
-    if(!['Administrador','Gerente'].includes(req.user.perfil)||!item.justificativa_desconto||total>computed||(req.user.perfil==='Gerente'&&total<Math.ceil(computed*0.7))) throw httpError(403,'Alteracao de preco exige desconto autorizado e justificativa.');
-   }
-   const inserted=await db.runAsync("INSERT INTO Reservas(tenant_id,cliente_id,quadra_id,data_reserva,hora_inicio,hora_fim,valor_total,status,status_pagamento,criado_por,esporte) VALUES(?,?,?,?,?,?,?,'Confirmada',?,?,?)",[tenant,client.id,item.quadra_id,item.data_reserva,item.hora_inicio,item.hora_fim,total/100,total===0?'Pago':'Pendente',req.user.id,item.esporte||'Geral']);
-   if(item.pagamento?.registrar){
-    const paid=cents(item.pagamento.valor===undefined?total/100:item.pagamento.valor);
-    if(paid>total) throw httpError(400,'Pagamento acima do saldo.');
-    const method=require('../services/manualPaymentService').manualMethod(item.pagamento.metodo);
-    await db.runAsync('INSERT INTO Pagamentos(reserva_id,valor,metodo,registrado_por) VALUES(?,?,?,?)',[inserted.lastID,paid/100,method,req.user.id]);
-   }
-   const balance=await require('../services/paymentLedgerService').recompute(inserted.lastID);
-   return {reserva_id:inserted.lastID,valor_total:total/100,status_pagamento:balance.novoStatus};
-  });
+  const inserted=await require('../services/bookingService').createBookings({tenantId:req.user.tenant_id,items:req.body.itens || [req.body],actor:req.user,source:'staff'});
+  const balance=await db.getAsync('SELECT status_pagamento FROM Reservas WHERE id=?',[inserted.reservasCriadasIds[0]]);
+  const result={reserva_id:inserted.reservasCriadasIds[0],reservas_ids:inserted.reservasCriadasIds,valor_total:inserted.valorTotalGeral / 100,status_pagamento:balance.status_pagamento};
   logAuditEvent(req.user.id,'Criacao de reserva','Reserva: '+result.reserva_id,req.ip);
   res.status(201).json({message:'Reserva criada.',...result});
- }catch(e){res.status(e.status||500).json({error:e.status?e.message:'Erro ao criar reserva.'});}
+ }catch(e){res.status(e.status||500).json({error: require('../utils/security').publicError(e, 'Erro ao criar reserva.')});}
 };
 
 const minhasReservas = async (req, res) => {
   try {
-    const { cliente_id } = req.user;
+    const member = await require('../services/clientAccessService').membership(req.user, req.user.tenant_id, false);
+    const cliente_id = member?.id;
     if (!cliente_id) {
       return res.status(403).json({ error: 'Usuário não tem perfil de cliente vinculado.' });
     }
@@ -169,9 +85,9 @@ const minhasReservas = async (req, res) => {
       ORDER BY r.data_reserva DESC, r.hora_inicio DESC
     `, [cliente_id, tenant_id]);
 
-    res.json(reservas);
+    res.json(reservas.map(r => ({ ...r, valor_total: (r.valor_total || 0) / 100 })));
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao buscar reservas do cliente.' });
   }
 };
@@ -185,13 +101,6 @@ const cancelarReserva = async (req, res) => {
     const reserva = await db.getAsync('SELECT * FROM Reservas WHERE id = ? AND tenant_id = ?', [id, tenant_id]);
     if (!reserva) return res.status(404).json({ error: 'Reserva não encontrada.' });
 
-    let novoStatusPagamento = reserva.status_pagamento;
-    if (reserva.status_pagamento === 'Pendente') {
-      novoStatusPagamento = 'Cancelado';
-    } else if (reserva.status_pagamento === 'Pago') {
-      novoStatusPagamento = 'Estornado';
-    }
-
     // Busca o texto do motivo para o log
     // Busca o texto do motivo para o log
     let motivoTexto = 'Motivo desconhecido';
@@ -200,7 +109,7 @@ const cancelarReserva = async (req, res) => {
       else if (motivo == -2) motivoTexto = 'Condições Climáticas';
       else if (motivo == -3) motivoTexto = 'Manutenção da Quadra';
       else {
-        const m = await db.getAsync('SELECT motivo FROM MotivosCancelamento WHERE id = ?', [motivo]);
+        const m = await db.getAsync('SELECT motivo FROM MotivosCancelamento WHERE id = ? AND tenant_id = ?', [motivo,tenant_id]);
         if (m) motivoTexto = m.motivo;
       }
     }
@@ -213,11 +122,7 @@ const cancelarReserva = async (req, res) => {
       grupoParams = [reserva.grupo_id, tenant_id];
     }
 
-    await db.runAsync(
-      `UPDATE Reservas SET status = "Cancelada", status_pagamento = ?, motivo_cancelamento_id = ?, observacoes_cancelamento = ? ${grupoClause}`,
-      [novoStatusPagamento, motivo || null, observacoes || null, ...grupoParams]
-    );
-
+    const cancellation=await require('../services/bookingCancellationService').requestCancellation([id],{tenantId:tenant_id,reason:motivoTexto});
     logAuditEvent(req.user.id, 'Cancelamento de reserva', `Reserva ID: ${id}, Motivo: ${motivoTexto}`, req.ip);
 
     // Dispara e-mail de cancelamento em background (defensivo)
@@ -249,13 +154,13 @@ const cancelarReserva = async (req, res) => {
           await sendEmail(client.email, subject, html);
         }
       } catch (e) {
-        console.error('[SMTP] Erro ao disparar e-mail de cancelamento:', e.message);
+        logger.error('[SMTP] Erro ao disparar e-mail de cancelamento:', e.message);
       }
     })();
 
-    res.json({ message: 'Reserva cancelada com sucesso.' });
+    res.status(cancellation.pending?202:200).json({message:cancellation.pending?'Cancelamento pendente de conciliação.':'Reserva cancelada.',pending:cancellation.pending});
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao cancelar reserva.' });
   }
 };
@@ -305,7 +210,7 @@ const criarBloqueio = async (req, res) => {
 
     res.status(201).json({ message: 'Quadra bloqueada com sucesso.', bloqueio_id: insert.lastID });
   } catch (error) {
-    console.error('Erro ao criar bloqueio:', error);
+    logger.error('Erro ao criar bloqueio:', error);
     res.status(500).json({ error: 'Erro interno do servidor.' });
   }
 };
@@ -330,7 +235,7 @@ const removerBloqueio = async (req, res) => {
 
     res.json({ message: 'Bloqueio removido com sucesso.' });
   } catch (error) {
-    console.error('Erro ao remover bloqueio:', error);
+    logger.error('Erro ao remover bloqueio:', error);
     res.status(500).json({ error: 'Erro interno do servidor.' });
   }
 };
@@ -371,7 +276,7 @@ const desbloquearParcialmente = async (req, res) => {
     logAuditEvent(usuario_id, 'Desbloqueio Parcial', `Bloqueio ID: ${id}, Furo: ${hora_inicio_desbloqueio} - ${hora_fim_desbloqueio}`, req.ip);
     res.json({ message: 'Horário desbloqueado com sucesso.' });
   } catch (error) {
-    console.error('Erro ao desbloquear parcialmente:', error);
+    logger.error('Erro ao desbloquear parcialmente:', error);
     res.status(500).json({ error: 'Erro interno.' });
   }
 };
@@ -412,7 +317,7 @@ const desbloquearHoraDelete = async (req, res) => {
     logAuditEvent(req.user.id, 'Desbloqueio Parcial', `Bloqueio ID: ${id}, Furo: ${hora_inicio_desbloqueio} - ${hora_fim_desbloqueio}`, req.ip);
     res.json({ message: 'Horário desbloqueado com sucesso.' });
   } catch (error) {
-    console.error('Erro ao desbloquear parcialmente via DELETE:', error);
+    logger.error('Erro ao desbloquear parcialmente via DELETE:', error);
     res.status(500).json({ error: 'Erro interno.' });
   }
 };

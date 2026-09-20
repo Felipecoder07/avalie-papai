@@ -220,8 +220,7 @@ export function MasterArenaDetalhe({ onNavigate }: Readonly<Props>) {
     if (!arenaId) return;
     try {
       setLoading(true);
-      const token = localStorage.getItem('courtmanager_token');
-      const headers = { 'Authorization': `Bearer ${token}` };
+      const headers = {};
 
       // 1. Fetch Arena Details & SaaS Plans
       const [resArena, resPlanos] = await Promise.all([
@@ -289,13 +288,11 @@ export function MasterArenaDetalhe({ onNavigate }: Readonly<Props>) {
 
   const handleSave = async () => {
     try {
-      const token = localStorage.getItem('courtmanager_token');
       
       // Update details
       const resUpdate = await fetch(`/api/saas/arenas/${arenaId}`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -318,7 +315,6 @@ export function MasterArenaDetalhe({ onNavigate }: Readonly<Props>) {
         const resPlan = await fetch(`/api/saas/arenas/${arenaId}/plano`, {
           method: 'PATCH',
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ plano_id: Number(planoId) })
@@ -340,12 +336,10 @@ export function MasterArenaDetalhe({ onNavigate }: Readonly<Props>) {
 
   const handleToggleStatus = async (password: string) => {
     try {
-      const token = localStorage.getItem('courtmanager_token');
       const nextStatus = arena.status === 0 ? 1 : 0;
       const res = await fetch(`/api/saas/arenas/${arenaId}/status`, {
         method: 'PATCH',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ status: nextStatus, senha: password })
@@ -365,11 +359,9 @@ export function MasterArenaDetalhe({ onNavigate }: Readonly<Props>) {
 
   const handleDelete = async (password: string) => {
     try {
-      const token = localStorage.getItem('courtmanager_token');
       const res = await fetch(`/api/saas/arenas/${arenaId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ senha_master: password })

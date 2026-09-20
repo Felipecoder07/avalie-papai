@@ -48,24 +48,15 @@ const verifyToken = async (req, res, next) => {
     if (checkResult) return res.status(checkResult.status).json(checkResult.body);
     next();
   } catch (error) {
-    res.status(error.status || 503).json({ error: error.status ? error.message : 'Não foi possível validar a sessão.' });
+    res.status(error.status || 503).json({ error: require('../utils/security').publicError(error, 'Não foi possível validar a sessão.') });
   }
 };
 
-const requireRole = (roles) => {
-  return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.perfil)) {
-      return res.status(403).json({ error: 'Acesso negado para este perfil.' });
-    }
-    next();
-  };
-};
-
 const verifySuperAdmin = (req, res, next) => {
-  if (!req.user || req.user.perfil !== 'SuperAdmin') {
+  if (!require('../utils/permissions').can(req.user, 'master.manage')) {
     return res.status(403).json({ error: 'Acesso negado. Apenas o Super Administrador pode realizar esta ação.' });
   }
   next();
 };
 
-module.exports = { verifyToken, requireRole, verifySuperAdmin };
+module.exports = { verifyToken, verifySuperAdmin };

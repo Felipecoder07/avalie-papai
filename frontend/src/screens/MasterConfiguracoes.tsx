@@ -1,3 +1,4 @@
+import { ReauthenticationAction } from '../components/ReauthenticationAction';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Wrench, Eye, EyeOff, ShieldCheck } from 'lucide-react';
@@ -493,6 +494,8 @@ const ConfigTabManutencao: React.FC<ConfigTabManutencaoProps> = ({
 };
 
 export function MasterConfiguracoes() {
+  const [credentialToRemove, setCredentialToRemove] = useState('mp_master_access_token');
+
   const [tab, setTab] = useState<string>(() => sessionStorage.getItem('master_config_tab') || 'geral');
 
   const [trialDays, setTrialDays]         = useState('14');
@@ -529,9 +532,8 @@ export function MasterConfiguracoes() {
 
   const fetchConfigs = async () => {
     try {
-      const token = localStorage.getItem('courtmanager_token');
       const res = await fetch('/api/saas/configuracoes', {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         const data = await res.json();
@@ -564,11 +566,10 @@ export function MasterConfiguracoes() {
   const handleSave = async (updatedMaintenance?: boolean) => {
     setSaving(true);
     try {
-      const token = localStorage.getItem('courtmanager_token');
       const isMaintActive = updatedMaintenance !== undefined ? updatedMaintenance : maintenance;
       const res = await fetch('/api/saas/configuracoes', {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dias_trial: trialDays,
           trial_ativo: trialAtivo ? '1' : '0',
@@ -599,6 +600,24 @@ export function MasterConfiguracoes() {
 
   return (
     <div className="admin-configuracoes-page">
+      {tab === 'gateway' && <details className="card">
+        <summary>Remover credencial de integração</summary>
+        <p>A remoção interrompe a integração correspondente. Informe sua senha e o código do segundo fator.</p>
+        <label>Credencial
+          <select value={credentialToRemove} onChange={e => setCredentialToRemove(e.target.value)}>
+            <option value="mp_master_access_token">Token master</option>
+            <option value="mp_client_secret">Client secret</option>
+            <option value="mp_webhook_secret">Webhook secret</option>
+          </select>
+        </label>
+        <ReauthenticationAction label="Confirmar remoção" onConfirm={async proof => {
+          const response = await fetch('/api/saas/credenciais/' + credentialToRemove, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(proof) });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Não foi possível remover a credencial.');
+          showToast('Credencial removida.'); await fetchConfigs();
+        }} />
+      </details>}
+
 
       {/* Toast */}
       {toast && (

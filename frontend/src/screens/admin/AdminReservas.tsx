@@ -222,7 +222,6 @@ export const AdminGradeSlot: React.FC<AdminGradeSlotProps> = ({
 };
 
 export function AdminReservas() {
-  const token = localStorage.getItem('courtmanager_token');
 
   // Controle de Visualização e Filtros
   const [scope, setScope] = useState<'diaria' | 'semanal'>('diaria');
@@ -359,7 +358,7 @@ export function AdminReservas() {
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/pagamentos/gateway/status/${selectedReserva.id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: {}
         });
         if (res.ok) {
           const data = await res.json();
@@ -376,11 +375,10 @@ export function AdminReservas() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [activeModal, selectedReserva, gatewayRef, token]);
+  }, [activeModal, selectedReserva, gatewayRef]);
 
   // Carregar Grade principal
   const fetchGrade = async () => {
-    if (!token) return;
     setLoading(true);
 
     let start = selectedDate;
@@ -394,7 +392,7 @@ export function AdminReservas() {
 
     try {
       const res = await fetch(`/api/reservas/grade?data_inicio=${start}&data_fim=${end}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         const json = await res.json();
@@ -409,13 +407,12 @@ export function AdminReservas() {
 
   // Carregar dados gerais na inicialização
   useEffect(() => {
-    if (!token) return;
 
     const fetchGerais = async () => {
       try {
         // Clientes
         const resCl = await fetch('/api/clientes', {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: {}
         });
         if (resCl.ok) {
           const cl = await resCl.json();
@@ -424,7 +421,7 @@ export function AdminReservas() {
 
         // Quadras
         const resQd = await fetch('/api/quadras', {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: {}
         });
         if (resQd.ok) {
           const qd = await resQd.json();
@@ -441,7 +438,7 @@ export function AdminReservas() {
     };
 
     fetchGerais();
-  }, [token]);
+  }, []);
 
   // Recarregar grade quando muda data, escopo ou filtros
   useEffect(() => {
@@ -484,12 +481,12 @@ export function AdminReservas() {
 
   // Carregar valor pago real da reserva selecionada ao abrir detalhes
   useEffect(() => {
-    if (!selectedReserva || !token) return;
+    if (!selectedReserva) return;
 
     const fetchPagos = async () => {
       try {
         const res = await fetch(`/api/pagamentos/reserva/${selectedReserva.id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: {}
         });
         if (res.ok) {
           const pags = await res.json();
@@ -505,7 +502,7 @@ export function AdminReservas() {
     };
 
     fetchPagos();
-  }, [selectedReserva?.id, token]);
+  }, [selectedReserva?.id]);
 
   // Recalcular horários disponíveis da reserva (Nova Reserva)
   useEffect(() => {
@@ -735,7 +732,6 @@ export function AdminReservas() {
       const res = await fetch('/api/clientes', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -827,7 +823,6 @@ export function AdminReservas() {
       const res = await fetch('/api/reservas', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
@@ -844,7 +839,6 @@ export function AdminReservas() {
           const cobrancaRes = await fetch('/api/pagamentos/gateway/cobranca', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -922,7 +916,6 @@ export function AdminReservas() {
       const res = await fetch('/api/reservas/bloqueios', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -957,7 +950,6 @@ export function AdminReservas() {
       const res = await fetch(`/api/reservas/${selectedReserva.id}/cancelar`, {
         method: 'PATCH',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -992,7 +984,6 @@ export function AdminReservas() {
         const res = await fetch('/api/pagamentos/gateway/cobranca', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -1021,7 +1012,6 @@ export function AdminReservas() {
         const res = await fetch('/api/pagamentos/gateway/cobranca', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -1048,7 +1038,6 @@ export function AdminReservas() {
       const res = await fetch('/api/pagamentos', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -1082,7 +1071,6 @@ export function AdminReservas() {
       const res = await fetch('/api/pagamentos/estorno', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -1115,7 +1103,7 @@ export function AdminReservas() {
 
       const res = await fetch(url, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
 
       if (!res.ok) {
@@ -2211,7 +2199,7 @@ export function AdminReservas() {
                     const valNum = parseCurrencyToFloat(pagValor) || selectedReserva.valor_total;
                     const res = await fetch('/api/pagamentos', {
                       method: 'POST',
-                      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                      headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ reserva_id: selectedReserva.id, valor: valNum, metodo: 'Pix' })
                     });
                     if (res.ok) {

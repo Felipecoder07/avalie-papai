@@ -1,3 +1,4 @@
+import { ChangePassword } from './ChangePassword';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Menu, Bell, ChevronRight, X, Globe, Copy, ExternalLink, Share2, Check } from 'lucide-react';
@@ -28,10 +29,9 @@ export function AdminTopbar({ onToggleSidebar }: Readonly<AdminTopbarProps>) {
     window.addEventListener('arena_nome_changed', handleChanged);
 
     // Busca dados atualizados da arena logada para sincronizar nome e slug reais
-    const token = safeStorage.getItem('courtmanager_token');
-    if (token) {
+    {
       fetch('/api/arenas/minha', {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       })
         .then(r => r.json())
         .then(data => {
@@ -51,11 +51,9 @@ export function AdminTopbar({ onToggleSidebar }: Readonly<AdminTopbarProps>) {
   }, []);
 
   const fetchNotifications = async () => {
-    const token = safeStorage.getItem('courtmanager_token');
-    if (!token) return;
     try {
       const res = await fetch('/api/auth/comunicados/ativos', {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         const data = await res.json();
@@ -188,6 +186,7 @@ export function AdminTopbar({ onToggleSidebar }: Readonly<AdminTopbarProps>) {
         )}
       </div>
 
+      <ChangePassword />
       {/* Arena Name Indicator */}
       <div className="topbar-arena hidden md:flex">
         <span className="arena-dot" />

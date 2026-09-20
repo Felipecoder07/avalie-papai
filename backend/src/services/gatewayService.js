@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('gatewayService');
 const { fetch } = require('../utils/providerHttp');
 const db = require('../config/database');
 const { sendEmail } = require('./emailService');
@@ -38,7 +39,8 @@ const criarCobrancaPixRaw = async (reserva_id, valor, tenant_id, intentKey) => {
         chave: chavePix,
         nome: titular,
         cidade: cidade,
-        valor: valor,
+        // The ledger and gateway service use centavos; the EMV helper accepts reais.
+        valor: valor / 100,
         txid: `RESERVA${reserva_id}`
       });
 
@@ -78,7 +80,7 @@ const criarCobrancaPixRaw = async (reserva_id, valor, tenant_id, intentKey) => {
         'X-Idempotency-Key': idempotencyKey
       },
       body: JSON.stringify({
-        transaction_amount: Number.parseFloat(valor.toFixed(2)),
+        transaction_amount: Number.parseFloat((valor / 100).toFixed(2)),
         description: `Reserva #${reserva_id} no Arenix`,
         payment_method_id: 'pix',
         payer: {
@@ -106,8 +108,8 @@ const criarCobrancaPixRaw = async (reserva_id, valor, tenant_id, intentKey) => {
       };
     } else {
       const errData = await response.json();
-      const safeMsg = String(errData?.message || (errData?.cause && errData.cause[0] ? errData.cause[0].description : 'Credenciais inválidas')).replace(/[\r\n]/g, '');
-      console.error(`[Mercado Pago API Error] ${safeMsg}`);
+      const safeMsg = 'O provedor não autorizou a cobrança.';
+      logger.error(`[Mercado Pago API Error] ${safeMsg}`);
       throw new Error(`Mercado Pago: ${safeMsg}`);
     }
   } catch (e) {
@@ -150,7 +152,7 @@ const criarCobrancaCartaoRaw = async (reserva_id, valor, card_data, tenant_id, i
         'X-Idempotency-Key': idempotencyKey
       },
       body: JSON.stringify({
-        transaction_amount: Number.parseFloat(valor.toFixed(2)),
+        transaction_amount: Number.parseFloat((valor / 100).toFixed(2)),
         token: card_data.token,
         description: `Reserva #${reserva_id} no Arenix`,
         installments: 1,
@@ -175,11 +177,11 @@ const criarCobrancaCartaoRaw = async (reserva_id, valor, card_data, tenant_id, i
       return { status: mpData.status, gateway_ref: txRef };
     } else {
       const errData = await response.json();
-      throw new Error(errData.message || 'Erro ao processar pagamento com cartão.');
+      throw new Error('Erro ao processar pagamento com cartão.');
     }
   } catch (e) {
-    console.error('[Mercado Pago Cartao Exception]', e);
-    throw new Error(e.message || 'Erro ao processar pagamento com cartão.');
+    logger.error('[Mercado Pago Cartao Exception]', e);
+    throw new Error('Erro ao processar pagamento com cartão.');
   }
 };
 
@@ -212,7 +214,7 @@ const criarCobrancaMaquinetaRaw = async (reserva_id, valor, tenant_id, intentKey
         'X-Idempotency-Key': idempotencyKey
       },
       body: JSON.stringify({
-        amount: Number.parseFloat(valor.toFixed(2)),
+        amount: Number.parseFloat((valor / 100).toFixed(2)),
         description: `Reserva #${reserva_id} no Arenix`,
         payment: { installments: 1, type: 'credit_card' }
       })
@@ -230,12 +232,12 @@ const criarCobrancaMaquinetaRaw = async (reserva_id, valor, tenant_id, intentKey
       return { status: 'pending', gateway_ref: txRef, device_id: deviceId };
     } else {
       const errData = await response.json();
-      const safeMsg = String(errData?.message || 'Erro ao enviar intenção para a maquineta.').replace(/[\r\n]/g, '');
-      console.error(`[Mercado Pago Point Cloud API Error] ${safeMsg}`);
+      const safeMsg = 'O provedor não autorizou a cobrança.';
+      logger.error(`[Mercado Pago Point Cloud API Error] ${safeMsg}`);
       throw new Error(safeMsg);
     }
   } catch (e) {
-    console.error('[Mercado Pago Point Cloud Exception]', e);
+    logger.error('[Mercado Pago Point Cloud Exception]', e);
     throw new Error(e.message || 'Erro de rede ao conectar com a maquineta.');
   }
 };
@@ -271,7 +273,7 @@ const estornarPagamentoPix=async(reserva_id,tenant_id)=>{
    const response=await fetch('https://api.mercadopago.com/v1/payments/'+encodeURIComponent(tx.gateway_ref)+'/refunds',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json','X-Idempotency-Key':selected.id},body:JSON.stringify({amount:selected.amount/100})});
    const refund=await response.json();
    if(!response.ok||refund.status!=='approved'||require('../utils/security').cents(refund.amount)!==selected.amount) throw new Error('Refund unconfirmed');
-   await require('./paymentLedgerService').reverse(tx.gateway_ref,selected.total/100);
+   await require('./paymentLedgerService').reverse(tx.gateway_ref,selected.total);
    await db.runAsync("UPDATE RefundIntents SET state='completed',response_json=? WHERE id=?",[JSON.stringify({id:refund.id,status:refund.status}),selected.id]);
   }catch(e){
    await db.runAsync("UPDATE RefundIntents SET state='unknown' WHERE id=?",[selected.id]);
@@ -285,11 +287,63 @@ const {withIntent}=require('./paymentIntentService');
 const criarCobrancaPix=(id,valor,tenant)=>withIntent('Pix',id,valor,tenant,key=>criarCobrancaPixRaw(id,valor,tenant,key));
 const criarCobrancaCartao=(id,valor,card,tenant)=>withIntent('Cartao',id,valor,tenant,key=>criarCobrancaCartaoRaw(id,valor,card,tenant,key));
 const criarCobrancaMaquineta=(id,valor,tenant)=>withIntent('Maquineta',id,valor,tenant,key=>criarCobrancaMaquinetaRaw(id,valor,tenant,key));
+async function resolverContextoWebhookMercadoPago(paymentId) {
+  const tx = await db.getAsync(`
+    SELECT t.gateway_ref, t.reserva_id, t.valor, r.tenant_id,
+           a.gateway_access_token, a.gateway_user_id,
+           i.id AS intent_id, i.amount_cents AS intent_amount_cents,
+           i.tenant_id AS intent_tenant_id, i.reserva_id AS intent_reserva_id,
+           i.state AS intent_state
+    FROM TransacoesGateway t
+    JOIN Reservas r ON r.id = t.reserva_id
+    JOIN Arenas a ON a.id = r.tenant_id
+    LEFT JOIN PaymentIntents i ON i.gateway_ref = t.gateway_ref
+    WHERE t.gateway_ref = ?
+  `, [paymentId]);
+  if (!tx?.gateway_access_token?.trim() || !tx.gateway_user_id || !tx.intent_id ||
+      Number(tx.intent_amount_cents) !== Number(tx.valor) ||
+      Number(tx.intent_tenant_id) !== Number(tx.tenant_id) ||
+      Number(tx.intent_reserva_id) !== Number(tx.reserva_id)) return null;
+  return { ...tx, token: require('../utils/security').decrypt(tx.gateway_access_token.trim()) };
+}
+
+async function liquidarWebhookMercadoPago(paymentId, context) {
+  if (!context || !paymentId) return;
+  const safePaymentId = String(paymentId).trim();
+  if (!/^\d+$/.test(safePaymentId)) return;
+  const encodedPaymentId = encodeURIComponent(safePaymentId);
+
+  const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${encodedPaymentId}`, {
+    headers: { 'Authorization': `Bearer ${context.token}` }
+  });
+  if (!mpRes.ok && (mpRes.status === 429 || mpRes.status >= 500)) {
+    throw new Error('Consulta temporariamente indisponível no provedor de pagamentos.');
+  }
+  if (mpRes.ok) {
+    const mpData = await mpRes.json();
+    if (String(mpData.id) !== safePaymentId || mpData.currency_id !== 'BRL' ||
+        !Number.isFinite(Number(mpData.transaction_amount)) ||
+        require('../utils/security').cents(mpData.transaction_amount) !== Number(context.valor) ||
+        String(mpData.collector_id) !== String(context.gateway_user_id)) {
+      logger.warn('[Gateway Webhook] Pagamento consultado diverge da transação/intenção; crédito bloqueado.');
+      return;
+    }
+    if (['refunded','charged_back'].includes(mpData.status) || Number(mpData.transaction_amount_refunded)>0) { await require('./paymentLedgerService').reverse(safePaymentId, Math.round((mpData.transaction_amount_refunded || mpData.transaction_amount) * 100)); return; }
+    if (mpData.status === 'approved') {
+      const payload = {};
+      if (mpData.pos_id) payload.device_id = mpData.pos_id;
+      if (mpData.transaction_amount) payload.valor_pago = Math.round(mpData.transaction_amount * 100);
+      await processarLiquidacao(safePaymentId, payload);
+    }
+  }
+}
+
 module.exports = {
   criarCobrancaPix,
   criarCobrancaCartao,
   criarCobrancaMaquineta,
   processarLiquidacao,
-  estornarPagamentoPix
+  estornarPagamentoPix,
+  resolverContextoWebhookMercadoPago,
+  liquidarWebhookMercadoPago
 };
-

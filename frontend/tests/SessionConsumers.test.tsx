@@ -15,7 +15,8 @@ describe('session consumers', () => {
     vi.stubGlobal('fetch', fetchMock);
     render(<MemoryRouter><PortalCliente /></MemoryRouter>);
     expect(await screen.findByText('João Silva')).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith('/api/reservas/minhas', { headers: { Authorization: 'Bearer client-token' } });
+    expect(fetchMock).toHaveBeenCalledWith('/api/reservas/minhas', { credentials: 'same-origin', headers: expect.any(Headers) });
+    expect(fetchMock.mock.calls[0][1].headers.has('authorization')).toBe(false);
   });
 
   it('redirects a corrupted client session to login without rendering errors', async () => {

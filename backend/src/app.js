@@ -16,14 +16,15 @@ const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+    if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
     return callback(new Error('Origem não permitida pela política de CORS'));
   },
   credentials: true
 }));
-app.use('/api/arenas/upload-capa', express.json({limit:'7mb'}));
+const { uploadLimiter } = require('./middlewares/rateLimiter');
+app.use('/api/arenas/upload-capa', uploadLimiter, express.json({limit:'7mb'}));
 app.use(express.json({ limit: '256kb' }));
 app.use(express.urlencoded({ limit: '32kb', extended: false }));
 app.use((req,res,next)=>{

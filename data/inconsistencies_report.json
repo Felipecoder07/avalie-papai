@@ -1,0 +1,20 @@
+{
+  "duplicidades_usuarios": [],
+  "pagamentos_sem_reserva": [],
+  "grupos_com_saldo_inconsistente": [
+    {
+      "grupo_id": "GRUPO_23_1787599168518",
+      "valor_reservas": 1,
+      "valor_pago": 3
+    }
+  ],
+  "contas_superadmin": [
+    {
+      "id": 5,
+      "nome": "Super Administrador",
+      "email": "master@courtmanager.com",
+      "criado_em": "2026-07-17 02:46:57"
+    }
+  ],
+  "segredos_padrao": []
+}

@@ -1,9 +1,11 @@
+const logger = require('../utils/safeLogger').forModule('cronSaaS');
 const cron = require('node-cron');
 const db = require('../config/database');
 const { formatarCompetencia, calcularProximaDataVencimento } = require('../utils/dateUtils');
 const { enviarAvisosVencimento } = require('../services/saasBillingService');
 const { executarBloqueioInadimplencia } = require('./bloqueioInadimplencia');
 const { executarLimpezaFantasmas } = require('./limpezaFantasmas');
+const { processarOutbox } = require('./reconciliacaoOutbox');
 
 async function buscarArenasParaFaturamento(todayStr, currentDay, lastDayOfMonth) {
   const queryVencimento = (currentDay === lastDayOfMonth)
@@ -91,11 +93,11 @@ async function processarFaturaArena(arena, currentYear, currentMonth, todayStr, 
     VALUES (?, ?, ?, ?, ?, ?, 'Pendente')
   `, [arena.tenant_id, arena.plano_id, valorFinal, ciclo, descricao, todayStr]);
 
-  console.log(`[SaaS CRON] Fatura de R$${valorFinal} (${ciclo}) gerada para Arena ID: ${arena.tenant_id} (${descricao})`);
+  logger.log(`[SaaS CRON] Fatura de R$${valorFinal} (${ciclo}) gerada para Arena ID: ${arena.tenant_id} (${descricao})`);
 }
 
 const processSaaS = async () => {
-  console.log('[SaaS CRON] Iniciando processamento financeiro diário...');
+  logger.log('[SaaS CRON] Iniciando processamento financeiro diário...');
   try {
     const today = new Date();
     const currentDay = today.getDate();
@@ -119,9 +121,12 @@ const processSaaS = async () => {
     // 4. Limpeza de cadastros abandonados
     await executarLimpezaFantasmas();
 
-    console.log('[SaaS CRON] Processamento financeiro finalizado com sucesso.');
+    // 5. Reconciliação do Outbox Financeiro
+    await processarOutbox();
+
+    logger.log('[SaaS CRON] Processamento financeiro finalizado com sucesso.');
   } catch (err) {
-    console.error('[SaaS CRON Error] Falha ao processar billing:', err);
+    logger.error('[SaaS CRON Error] Falha ao processar billing:', err);
   }
 };
 
@@ -129,7 +134,7 @@ const startSaaSCron = () => {
   cron.schedule('0 0 * * *', () => {
     processSaaS();
   });
-  console.log('Serviço de CRON Financeiro (SaaS) inicializado.');
+  logger.log('Serviço de CRON Financeiro (SaaS) inicializado.');
 };
 
 module.exports = { startSaaSCron, processSaaS };

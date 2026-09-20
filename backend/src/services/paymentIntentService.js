@@ -1,12 +1,14 @@
 const db=require('../config/database');
 const {ensureSecuritySchema}=require('../config/securitySchema');
-const {cents,httpError,secret}=require('../utils/security');
+const {httpError,secret}=require('../utils/security');
 async function withIntent(method,reservationId,value,tenantId,create) {
   await ensureSecuritySchema(db);
-  const amount=cents(value);
+  // Callers pass integer centavos, matching Reservations, Pagamentos and the gateway API.
+  const amount=Number(value);
+  if(!Number.isSafeInteger(amount)||amount<=0) throw httpError(400,'Valor monetário inválido.');
   const selected=await db.transaction(async()=>{
     const reservation=await db.getAsync('SELECT * FROM Reservas WHERE id=? AND tenant_id=?',[reservationId,tenantId]);
-    if(!reservation||reservation.status==='Cancelada') throw httpError(400,'Reserva indisponível para pagamento.');
+    if(!reservation||['Cancelada','Cancelamento pendente'].includes(reservation.status)) throw httpError(400,'Reserva indisponível para pagamento.');
     const scope=reservation.grupo_id||'reservation:'+reservation.id;
     const existing=await db.getAsync("SELECT * FROM PaymentIntents WHERE tenant_id=? AND scope=? AND method=? AND state IN ('creating','pending','unknown')",[tenantId,scope,method]);
     if(existing) {
@@ -19,9 +21,11 @@ async function withIntent(method,reservationId,value,tenantId,create) {
     const rows=await require('./paymentLedgerService').scopeReservations(reservation);
     let balance=0;
     for(const r of rows) {
-      if(r.status==='Cancelada') throw httpError(409,'Pedido contém reserva cancelada.');
+      if(['Cancelada','Cancelamento pendente'].includes(r.status)) throw httpError(409,'Pedido contém reserva cancelada.');
       const paid=await db.getAsync('SELECT COALESCE(SUM(valor),0) AS total FROM Pagamentos WHERE reserva_id=?',[r.id]);
-      balance+=Math.max(0,cents(r.valor_total,{zero:true})-Math.round(paid.total*100));
+      const totalCents=Number(r.valor_total),paidCents=Number(paid.total);
+      if(!Number.isSafeInteger(totalCents)||totalCents<=0||!Number.isSafeInteger(paidCents)||paidCents<0) throw httpError(409,'Saldo da reserva inválido; é necessária uma conciliação.');
+      balance+=Math.max(0,totalCents-paidCents);
     }
     if(amount>balance) throw httpError(400,'Valor acima do saldo do pedido.');
     const id=secret();

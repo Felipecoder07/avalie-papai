@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('auditoriaController');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
 
@@ -117,7 +118,7 @@ const listarLogs = async (req, res) => {
       estatisticas
     });
   } catch (error) {
-    console.error('Erro ao listar logs de auditoria:', error);
+    logger.error('Erro ao listar logs de auditoria:', error);
     res.status(500).json({ error: 'Erro interno ao buscar logs.' });
   }
 };

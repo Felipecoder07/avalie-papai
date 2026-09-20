@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('dashboardController');
 const db = require('../config/database');
 const { getTodayString, getLocalTimeString } = require('../utils/dateUtils');
 
@@ -165,7 +166,7 @@ const obterResumoDia = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Erro ao gerar dashboard do dia:', error);
+    logger.error('Erro ao gerar dashboard do dia:', error);
     res.status(500).json({ error: 'Erro interno ao carregar indicadores.' });
   }
 };

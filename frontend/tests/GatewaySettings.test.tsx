@@ -13,6 +13,7 @@ describe('configuração de pagamentos sem exposição de credenciais', () => {
     connected = true;
     fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
       let data: unknown = {};
+      if (url === '/api/auth/me') data = { usuario: { id: 1, perfil: 'Administrador' } };
       if (url === '/api/arenas/minha') data = { nome: 'Arena Teste', chave_pix: 'pix@example.test' };
       if (['/api/quadras', '/api/usuarios', '/api/motivos'].includes(url)) data = [];
       if (url === '/api/pagamentos/gateway/maquineta') {
@@ -69,10 +70,17 @@ describe('configuração de pagamentos sem exposição de credenciais', () => {
   it('desconecta pela ação explícita e atualiza a indicação da conta', async () => {
     show();
     await loaded();
-    fireEvent.click(screen.getByRole('button', { name: '❌ Desconectar Conta' }));
+    fireEvent.click(screen.getByText('Desconectar conta Mercado Pago'));
+    const confirm = screen.getByRole('button', { name: 'Confirmar desconexão' });
+    expect(confirm).toBeDisabled();
+    // The users tab also has a reauthentication form, inside a closed details.
+    const password = screen.getAllByLabelText('Senha atual').at(-1)!;
+    fireEvent.change(password, { target: { value: 'CurrentPassword123!' } });
+    fireEvent.click(confirm);
     await waitFor(() => expect(screen.queryByText('✓ Conta Conectada')).not.toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledWith('/api/pagamentos/gateway/oauth/desconectar', expect.objectContaining({
-      method: 'POST', headers: { Authorization: 'Bearer session-token' }
+      method: 'POST', body: JSON.stringify({ senha_atual: 'CurrentPassword123!', codigo_2fa: '' }),
+      credentials: 'same-origin', headers: expect.any(Headers)
     }));
     expect(gatewayWrites()).toHaveLength(0);
   });
@@ -96,7 +104,7 @@ describe('configuração de pagamentos sem exposição de credenciais', () => {
     window.history.replaceState({}, '', '/admin/configuracoes?code=fake-code&state=97001');
     show();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/pagamentos/gateway/oauth/exchange', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer session-token' },
+      method: 'POST', credentials: 'same-origin', headers: expect.any(Headers),
       body: JSON.stringify({ code: 'fake-code', state: '97001' })
     }));
     await loaded();

@@ -19,8 +19,7 @@ export function MasterAuditoria() {
 
   const fetchAuditoria = async () => {
     try {
-      const token = localStorage.getItem('courtmanager_token');
-      const headers = { 'Authorization': `Bearer ${token}` };
+      const headers = {};
       
       const [auditRes, sessionsRes] = await Promise.all([
         fetch('/api/saas/auditoria', { headers }).then(r => r.json()),
@@ -44,11 +43,9 @@ export function MasterAuditoria() {
     setSubmittingPw(true);
     setPwMsg(null);
     try {
-      const token = localStorage.getItem('courtmanager_token');
       const res = await fetch('/api/saas/alterar-senha', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -227,7 +224,7 @@ export function MasterAuditoria() {
               <Input type="text" inputMode="numeric" maxLength={6} value={pw2fa} onChange={(e: any) => setPw2fa(e.target.value)} placeholder="000000" className="font-mono tracking-widest" />
             </Field>
             <p className="text-[11px] text-muted -mt-2">
-              💡 Para testar, adicione a chave <strong>JBSWY3DPEHPK3PXP</strong> no Google Authenticator para gerar o código.
+              Configure seu autenticador com a chave individual fornecida no cadastro.
             </p>
             {pwMsg && (
               <p className={`text-sm font-medium ${pwMsg.type === 'success' ? 'text-success' : 'text-danger'}`}>

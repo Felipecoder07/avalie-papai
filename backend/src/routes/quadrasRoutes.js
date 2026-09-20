@@ -1,21 +1,22 @@
+const { requirePermission } = require('../utils/permissions');
 const express = require('express');
 const router = express.Router();
 const { listarQuadras, criarQuadra, atualizarQuadra, alterarStatusQuadra, criarBloqueio, deletarQuadra } = require('../controllers/quadrasController');
-const { verifyToken, requireRole } = require('../middlewares/auth');
+const { verifyToken } = require('../middlewares/auth');
 
 // Todas as rotas de quadras exigem token
 router.use(verifyToken);
 
 // Listar quadras (Qualquer perfil interno logado)
-router.get('/', listarQuadras);
+router.get('/', requirePermission('staff.read'), listarQuadras);
 
 // Apenas Gerentes e Admins podem criar ou modificar quadras
-router.post('/', requireRole(['Administrador', 'Gerente']), criarQuadra);
-router.put('/:id', requireRole(['Administrador', 'Gerente']), atualizarQuadra);
-router.patch('/:id/status', requireRole(['Administrador', 'Gerente']), alterarStatusQuadra);
-router.delete('/:id', requireRole(['Administrador', 'Gerente']), deletarQuadra);
+router.post('/', requirePermission('courts.manage'), criarQuadra);
+router.put('/:id', requirePermission('courts.manage'), atualizarQuadra);
+router.patch('/:id/status', requirePermission('courts.manage'), alterarStatusQuadra);
+router.delete('/:id', requirePermission('courts.manage'), deletarQuadra);
 
 // Bloqueios
-router.post('/bloqueios', requireRole(['Administrador', 'Gerente', 'Recepcionista']), criarBloqueio);
+router.post('/bloqueios', requirePermission('reservations.manage'), criarBloqueio);
 
 module.exports = router;

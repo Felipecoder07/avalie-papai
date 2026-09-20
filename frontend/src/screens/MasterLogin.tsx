@@ -55,10 +55,8 @@ export function MasterLogin() {
         return;
       }
 
-      const safeToken = typeof data.token === 'string' ? data.token.replace(/[^a-zA-Z0-9._\-]/g, '').trim() : '';
       const safeUser = data.usuario ? JSON.stringify(data.usuario).replace(/[<>\0]/g, '') : '';
 
-      safeStorage.setItem('courtmanager_token', safeToken);
       safeStorage.setItem('courtmanager_user', safeUser);
 
       if(data.requires_mfa_setup){

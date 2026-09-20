@@ -10,6 +10,7 @@ export function ResetPassword() {
   const loginPath = window.location.port === '5174' ? '/master-login' : '/login';
 
   const [password, setPassword] = useState('');
+  const [factor, setFactor] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -26,8 +27,8 @@ export function ResetPassword() {
       return;
     }
 
-    if (password.length < 8) {
-      setErrorMsg('A senha deve ter no mínimo 8 caracteres.');
+    if (password.length < 8 || new TextEncoder().encode(password).length > 72) {
+      setErrorMsg('A senha deve ter no mínimo 8 caracteres e no máximo 72 bytes.');
       return;
     }
 
@@ -47,7 +48,7 @@ export function ResetPassword() {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, novaSenha: password })
+        body: JSON.stringify({ token, novaSenha: password, codigo_2fa: factor })
       });
 
       const d = await res.json();
@@ -77,6 +78,7 @@ export function ResetPassword() {
             <p className="login-sub">Escolha uma nova senha forte para acessar sua conta.</p>
 
             <form onSubmit={handleSubmit} noValidate className="space-y-4">
+              <Field label="Código do autenticador (conta master)"><Input value={factor} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFactor(e.target.value)} autoComplete="one-time-code" /></Field>
               {errorMsg && (
                 <div className="login-error-alert" role="alert" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"

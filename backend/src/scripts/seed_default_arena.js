@@ -1,3 +1,5 @@
+if (process.env.NODE_ENV !== 'test') throw new Error('Fixture restrita aos testes. Use convite ou recuperação verificada.');
+const logger = require('../utils/safeLogger').forModule('seed_default_arena');
 const db = require('../config/database');
 const bcrypt = require('bcrypt');
 
@@ -29,10 +31,10 @@ async function seedDefaultArena() {
       VALUES (1, 1, 'Administrador Teste', 'admin@courtmanager.com', ?, 'Administrador', 1)
     `, [hash]);
 
-    console.log('✅ Arena Padrão, Quadras e Administrador criados com sucesso!');
+    logger.log('✅ Arena Padrão, Quadras e Administrador criados com sucesso!');
     process.exit(0);
   } catch (err) {
-    console.error('❌ Erro ao criar dados padrão:', err);
+    logger.error('❌ Erro ao criar dados padrão:', err);
     process.exit(1);
   }
 }

@@ -2,7 +2,7 @@ import { apiFetch as fetch } from '../utils/apiFetch';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { safeStorage } from '../utils/safeStorage';
-import { clearSession, getStoredUser, restoreRemoteLogin } from '../utils/session';
+import { clearSession, getStoredUser } from '../utils/session';
 
 interface SessionGuardProps {
   readonly children: ReactNode;
@@ -24,18 +24,13 @@ function ProfileSessionGuard({ children, requiredProfile, loginPath, roleLabel, 
 
   useEffect(() => {
     let active = true;
-    if (acceptRemoteLogin) restoreRemoteLogin();
 
     const verifySession = async () => {
-      const token = safeStorage.getItem('courtmanager_token');
-      if (!token) {
-        navigate(loginPath, { replace: true });
-        return;
-      }
+
 
       try {
         const res = await fetch('/api/auth/me', {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: {}
         });
         if (!res.ok) throw new Error('Sessão expirada ou não autorizada');
         const data = await res.json();
@@ -57,8 +52,10 @@ function ProfileSessionGuard({ children, requiredProfile, loginPath, roleLabel, 
       }
     };
 
+    const expired = () => { setIsAuth(false); navigate(loginPath, { replace: true }); };
+    window.addEventListener('cm:session-expired', expired);
     void verifySession();
-    return () => { active = false; };
+    return () => { active = false; window.removeEventListener('cm:session-expired', expired); };
   }, [acceptRemoteLogin, loginPath, navigate, requiredProfile, roleLabel]);
 
   if (checking) return <div className="flex min-h-screen items-center justify-center bg-cream text-charcoal">Verificando...</div>;

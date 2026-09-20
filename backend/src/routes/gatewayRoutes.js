@@ -1,3 +1,5 @@
+const logger = require('../utils/safeLogger').forModule('gatewayRoutes');
+const { requirePermission } = require('../utils/permissions');
 const {fetch}=require('../utils/providerHttp');
 const {decrypt,encrypt,frontendUrl:configuredFrontend,simulationAllowed,cents}=require('../utils/security');
 const express = require('express');
@@ -10,7 +12,7 @@ const {
   validateAndConsumeOAuthState,
   validateAndConsumeOAuthCode
 } = require('../utils/oauthState');
-const { criarCobrancaPix, criarCobrancaCartao, criarCobrancaMaquineta, processarLiquidacao } = require('../services/gatewayService');
+const { criarCobrancaPix, criarCobrancaCartao, criarCobrancaMaquineta, processarLiquidacao, resolverContextoWebhookMercadoPago, liquidarWebhookMercadoPago } = require('../services/gatewayService');
 
 // Criar cobrança para uma reserva (Pix, Cartão ou Maquineta)
 async function validarReservaECalcularValorCobrar(reserva_id, user, valorParam) {
@@ -34,11 +36,11 @@ async function validarReservaECalcularValorCobrar(reserva_id, user, valorParam) 
   }
 
   let valorCobrar = saldoRestante;
-  if(valorParam!==undefined && valorParam!==null) cents(valorParam);
-  if (valorParam !== undefined && valorParam !== null && Number.parseFloat(valorParam) > 0) {
-    const valorCustom = Number.parseFloat(valorParam);
-    if (valorCustom > saldoRestante + 0.01) {
-      throw { status: 400, message: `O valor informado (R$ ${valorCustom.toFixed(2)}) não pode ser maior que o saldo devedor (R$ ${saldoRestante.toFixed(2)}).` };
+  if (valorParam !== undefined && valorParam !== null) {
+    // Payment screens submit reais; reserva, ledger and gateway services use centavos.
+    const valorCustom = cents(valorParam);
+    if (valorCustom > saldoRestante) {
+      throw { status: 400, message: `O valor informado (R$ ${(valorCustom / 100).toFixed(2)}) não pode ser maior que o saldo devedor (R$ ${(saldoRestante / 100).toFixed(2)}).` };
     }
     valorCobrar = valorCustom;
   }
@@ -75,7 +77,7 @@ async function gerarCobrancaPorMetodo(metodo, reserva_id, valorCobrar, card_data
 }
 
 // Criar cobrança para uma reserva (Pix, Cartão ou Maquineta)
-router.post('/cobranca', verifyToken, async (req, res) => {
+router.post('/cobranca', verifyToken, requirePermission('gateway.reservation'), async (req, res) => {
   try {
     const { reserva_id, metodo, card_data, valor } = req.body;
 
@@ -83,19 +85,23 @@ router.post('/cobranca', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Os campos reserva_id e metodo são obrigatórios.' });
     }
 
+    if (req.user.perfil === 'Cliente' && !['pix', 'cartão', 'cartao'].includes(String(metodo).toLowerCase().trim())) {
+      return res.status(403).json({ error: 'Método indisponível para operações de atleta.' });
+    }
+
     const { reserva, valorCobrar } = await validarReservaECalcularValorCobrar(reserva_id, req.user, valor);
     const cobranca = await gerarCobrancaPorMetodo(metodo, reserva_id, valorCobrar, card_data, reserva.tenant_id);
     return res.json(cobranca);
 
   } catch (error) {
-    console.error('[Gateway Routes Error]', error);
+    logger.error('[Gateway Routes Error]', error);
     const status = error.status || 500;
-    res.status(status).json({ error: error.message || 'Erro ao gerar cobrança de pagamento.' });
+    res.status(status).json({ error: require('../utils/security').publicError(error, 'Erro ao gerar cobrança de pagamento.') });
   }
 });
 
 // Polling: Obter o status atual do pagamento da reserva
-router.get('/status/:reserva_id', verifyToken, async (req, res) => {
+router.get('/status/:reserva_id', verifyToken, requirePermission('gateway.reservation'), async (req, res) => {
   try {
     const { reserva_id } = req.params;
     const reserva = await db.getAsync('SELECT status, status_pagamento, cliente_id, tenant_id FROM Reservas WHERE id = ?', [reserva_id]);
@@ -112,13 +118,13 @@ router.get('/status/:reserva_id', verifyToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(error.status || 500).json({ error: error.status ? error.message : 'Erro ao consultar status da transação.' });
+    logger.error(error);
+    res.status(error.status || 500).json({ error: require('../utils/security').publicError(error, 'Erro ao consultar status da transação.') });
   }
 });
 
 // Simular pagamento (Útil apenas para desenvolvimento/testes e demonstração)
-router.post('/simular-pagamento', verifyToken, async (req, res) => {
+router.post('/simular-pagamento', verifyToken, requirePermission('gateway.simulate'), async (req, res) => {
   if (!simulationAllowed()) {
     return res.status(403).json({ error: 'A simulação de pagamentos está desabilitada em ambiente de produção.' });
   }
@@ -138,14 +144,15 @@ router.post('/simular-pagamento', verifyToken, async (req, res) => {
 
     const payload = {};
     if (device_id !== undefined) payload.device_id = device_id;
-    if (valor_pago !== undefined) payload.valor_pago = valor_pago;
+    // Frontend submits reais; settle() compares against TransacoesGateway.valor in centavos.
+    if (valor_pago !== undefined) payload.valor_pago = cents(valor_pago);
 
     const resultado = await processarLiquidacao(gateway_ref, payload);
     res.json({ message: 'Pagamento simulado e liquidado com sucesso.', ...resultado });
 
   } catch (error) {
-    console.error(error);
-    res.status(error.status || 400).json({ error: error.message || 'Erro ao simular liquidação.' });
+    logger.error(error);
+    res.status(error.status || 400).json({ error: require('../utils/security').publicError(error, 'Erro ao simular liquidação.') });
   }
 });
 
@@ -159,7 +166,7 @@ router.get('/maquineta', verifyToken, requireGatewayManager, async (req, res) =>
       gateway_public_key: arena ? arena.gateway_public_key : null
     });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Erro ao consultar configurações de pagamento.' });
   }
 });
@@ -191,49 +198,14 @@ router.post('/maquineta', verifyToken, requireGatewayManager, async (req, res) =
 
     res.json({ message: 'Configuração da maquineta física atualizada com sucesso.' });
   } catch (error) {
-    console.error('[Gateway Maquineta Config Error]', error);
+    logger.error('[Gateway Maquineta Config Error]', error);
     res.status(500).json({ error: 'Erro ao configurar dispositivo.' });
   }
 });
-async function resolverTokenWebhookMercadoPago(paymentId) {
-  const transacao = await db.getAsync('SELECT reserva_id FROM TransacoesGateway WHERE gateway_ref = ?', [paymentId]);
-  let token = process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MERCADOPAGO_ACCESS_TOKEN;
 
-  if (transacao) {
-    const reserva = await db.getAsync('SELECT tenant_id FROM Reservas WHERE id = ?', [transacao.reserva_id]);
-    if (reserva?.tenant_id) {
-      const arena = await db.getAsync('SELECT gateway_access_token FROM Arenas WHERE id = ?', [reserva.tenant_id]);
-      if (arena?.gateway_access_token?.trim()) {
-        token = decrypt(arena.gateway_access_token.trim());
-      }
-    }
-  }
-  return token;
-}
-
-async function liquidarWebhookMercadoPago(paymentId, token) {
-  if (!token || !paymentId) return;
-  const safePaymentId = String(paymentId).trim();
-  if (!/^\d+$/.test(safePaymentId)) return;
-  const encodedPaymentId = encodeURIComponent(safePaymentId);
-
-  const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${encodedPaymentId}`, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
-  if (mpRes.ok) {
-    const mpData = await mpRes.json();
-    if (['refunded','charged_back'].includes(mpData.status) || Number(mpData.transaction_amount_refunded)>0) { await require('../services/paymentLedgerService').reverse(safePaymentId,mpData.transaction_amount_refunded || mpData.transaction_amount); return; }
-    if (mpData.status === 'approved') {
-      const payload = {};
-      if (mpData.pos_id) payload.device_id = mpData.pos_id;
-      if (mpData.transaction_amount) payload.valor_pago = mpData.transaction_amount;
-      await processarLiquidacao(safePaymentId, payload);
-    }
-  }
-}
 
 // Webhook oficial (Chamado pelo Mercado Pago ou provedor configurado)
-router.post('/webhook', async (req, res) => {
+router.post('/webhook', require('../middlewares/rateLimiter').webhookLimiter, async (req, res) => {
   try {
     if(!await require('../utils/mpWebhook').validateWebhook(req)) return res.status(403).json({error:'Assinatura invalida.'});
     const { action, data } = req.body;
@@ -242,14 +214,14 @@ router.post('/webhook', async (req, res) => {
     if (isPaymentEvent) {
       const paymentId = String(data ? data.id : (req.query.id || req.body.id || ''));
       if (paymentId) {
-        const token = await resolverTokenWebhookMercadoPago(paymentId);
-        await liquidarWebhookMercadoPago(paymentId, token);
+        const context = await resolverContextoWebhookMercadoPago(paymentId);
+        await liquidarWebhookMercadoPago(paymentId, context);
       }
     }
 
     res.status(200).send('OK');
   } catch (error) {
-    console.error('[Gateway Webhook Error]', error.message);
+    console.error('[Gateway Webhook Error]', error);
     res.status(503).send('Retry');
   }
 });
@@ -262,14 +234,13 @@ async function getSaaSGatewayCredentials() {
     const idRow = await db.getAsync("SELECT valor FROM ConfiguracoesSaaS WHERE chave = 'mp_client_id'");
     if (idRow && idRow.valor) clientId = idRow.valor;
 
-    const secretRow = await db.getAsync("SELECT valor FROM ConfiguracoesSaaS WHERE chave = 'mp_client_secret'");
-    if (secretRow && secretRow.valor) clientSecret = decrypt(secretRow.valor);
+    clientSecret = await require('../services/credentialService').readCredential('mp_client_secret');
   } catch (e) {
-    console.error('Erro ao ler credenciais do banco:', e);
+    logger.error('Erro ao ler credenciais do banco:', e);
   }
 
   if (!clientId) clientId = process.env.MERCADO_PAGO_CLIENT_ID || '';
-  if (!clientSecret) clientSecret = process.env.MERCADO_PAGO_CLIENT_SECRET || '';
+
 
   return { clientId, clientSecret };
 }
@@ -295,7 +266,7 @@ router.get('/oauth/url', verifyToken, requireGatewayManager, async (req, res) =>
 
     res.json({ url: authUrl, state });
   } catch (error) {
-    console.error('[OAuth URL Error]', error);
+    logger.error('[OAuth URL Error]', error);
     res.status(500).json({ error: 'Erro ao gerar URL de autorização OAuth.' });
   }
 });
@@ -307,7 +278,7 @@ router.get('/oauth/callback', async (req, res) => {
     const { code, state, error } = req.query;
 
     if (error || !code || !state) {
-      const msg = error ? 'Autorização cancelada ou recusada pelo Mercado Pago.' : 'Parâmetros code ou state ausentes.';
+      const msg = 'A autorização foi recusada pelo provedor.';
       return res.redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=error&message=${encodeURIComponent(msg)}`);
     }
 
@@ -350,22 +321,22 @@ router.get('/oauth/callback', async (req, res) => {
         if (tenantId && accessToken) {
           await db.runAsync(`
             UPDATE Arenas
-            SET gateway_access_token = ?, gateway_public_key = ?
+            SET gateway_access_token = ?, gateway_public_key = ?, gateway_user_id = ?
             WHERE id = ?
-          `, [encrypt(accessToken), publicKey, tenantId]);
+          `, [encrypt(accessToken), publicKey, mpData.user_id ? String(mpData.user_id) : null, tenantId]);
           return res.redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=success`);
         }
       } else {
         const errData = await mpRes.json();
-        const safeErrMsg = String(errData?.message || 'Erro na resposta do Mercado Pago').replace(/[\r\n]/g, '');
-        console.error('[OAuth Token Exchange Error] Falha na troca do código de autorização');
+        const safeErrMsg = 'Não foi possível autorizar a conexão com o provedor.';
+        logger.error('[OAuth Token Exchange Error] Falha na troca do código de autorização');
         return res.redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=error&message=${encodeURIComponent(safeErrMsg)}`);
       }
     }
 
     return res.redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=error&message=${encodeURIComponent('Credenciais SaaS não configuradas.')}`);
   } catch (error) {
-    console.error('[OAuth Callback Error]');
+    logger.error('[OAuth Callback Error]');
     return res.status(500).redirect(`${frontendUrl}/admin/configuracoes?tab=pagamentos&oauth=error&message=${encodeURIComponent('Erro interno no processo de autenticação.')}`);
   }
 });
@@ -420,37 +391,41 @@ router.post('/oauth/exchange', verifyToken, requireGatewayManager, async (req, r
       if (tenantId && accessToken) {
         await db.runAsync(`
           UPDATE Arenas
-          SET gateway_access_token = ?, gateway_public_key = ?
+          SET gateway_access_token = ?, gateway_public_key = ?, gateway_user_id = ?
           WHERE id = ?
-        `, [encrypt(accessToken), publicKey, tenantId]);
+        `, [encrypt(accessToken), publicKey, mpData.user_id ? String(mpData.user_id) : null, tenantId]);
 
         return res.json({ message: 'Conta Mercado Pago conectada com sucesso!', gateway_connected: true, publicKey });
       }
     } else {
       const errData = await mpRes.json();
-      const safeErrMsg = String(errData?.message || 'Erro ao trocar código de autorização.').replace(/[\r\n]/g, '');
-      console.error('[OAuth Exchange Error] Falha na troca do código de autorização');
+      const safeErrMsg = 'Não foi possível autorizar a conexão com o provedor.';
+      logger.error('[OAuth Exchange Error] Falha na troca do código de autorização');
       return res.status(400).json({ error: safeErrMsg });
     }
   } catch (error) {
-    console.error('[OAuth Exchange Error]');
+    logger.error('[OAuth Exchange Error]');
     res.status(500).json({ error: 'Erro interno ao processar OAuth.' });
   }
 });
 
 // OAuth: Desconectar a conta Mercado Pago da Arena
-router.post('/oauth/desconectar', verifyToken, requireGatewayManager, async (req, res) => {
+router.post('/oauth/desconectar', verifyToken, requirePermission('gateway.disconnect'), require('../middlewares/rateLimiter').recoveryLimiter, async (req, res) => {
   try {
     const tenantId = req.user.tenant_id;
+    await db.transaction(async () => {
+    await require('../middlewares/reauthenticate').reauthenticate(req);
     await db.runAsync(`
       UPDATE Arenas
-      SET gateway_access_token = NULL, gateway_public_key = NULL
+      SET gateway_access_token = NULL, gateway_public_key = NULL, gateway_user_id = NULL
       WHERE id = ?
     `, [tenantId]);
+    await db.runAsync('INSERT INTO LogsAuditoria(tenant_id,usuario_id,evento,detalhes,ip) VALUES(?,?,?,?,?)', [tenantId,req.user.id,'Gateway desconectado','Credencial removida por ação explícita',req.ip]);
+    });
     res.json({ message: 'Conta Mercado Pago desconectada com sucesso.' });
   } catch (error) {
-    console.error('[OAuth Desconectar Error]', error);
-    res.status(500).json({ error: 'Erro ao desconectar conta.' });
+    logger.error('[OAuth Desconectar Error]', error);
+    res.status(error.status || 500).json({ error: require('../utils/security').publicError(error, 'Erro ao desconectar conta.') });
   }
 });
 

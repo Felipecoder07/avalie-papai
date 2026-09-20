@@ -41,6 +41,7 @@ router.delete('/comunicados/:id', saasController.deleteComunicadoSaaS);
 
 router.get('/configuracoes', saasController.getConfiguracoesSaaS);
 router.put('/configuracoes', saasController.updateConfiguracoesSaaS);
+router.delete('/credenciais/:key', require('../middlewares/rateLimiter').recoveryLimiter, require('../services/credentialService').removeCredential);
 router.post('/executar-bloqueio-inadimplencia', saasController.triggerAutoBlockCron);
 
 module.exports = router;

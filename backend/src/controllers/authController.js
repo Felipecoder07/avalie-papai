@@ -1,17 +1,19 @@
+const logger = require('../utils/safeLogger').forModule('authController');
 const bcrypt = require('bcrypt');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
 
 const { issueSession, logout: endSession } = require('../services/sessionService');
-const { passwordError, frontendUrl, secret } = require('../utils/security');
+const { passwordError, frontendUrl } = require('../utils/security');
 const { createChallenge, resetWithChallenge } = require('../services/recoveryService');
 const login = async (req,res) => {
   try {
+    await require('../config/securitySchema').ensureSecuritySchema(db);
     const {email,senha}=req.body;
-    if(typeof email!=='string'||typeof senha!=='string'||email.length>254||senha.length>200) return res.status(400).json({error:'Credenciais invalidas.'});
-    const user=await db.getAsync('SELECT u.*,a.nome AS arena_nome,a.slug AS arena_slug,a.status AS arena_status FROM Usuarios u LEFT JOIN Arenas a ON a.id=u.tenant_id WHERE LOWER(u.email)=?',[email.trim().toLowerCase()]);
+    if(typeof email!=='string'||typeof senha!=='string'||email.length>254||Buffer.byteLength(senha,'utf8')>72) return res.status(400).json({error:'Credenciais invalidas.'});
+    const user=await db.getAsync('SELECT u.id, u.nome, u.email, u.senha_hash, u.perfil, u.ativo, u.activation_pending, u.tenant_id, u.two_factor_secret, a.nome AS arena_nome, a.slug AS arena_slug, a.status AS arena_status FROM Usuarios u LEFT JOIN Arenas a ON a.id=u.tenant_id WHERE LOWER(u.email)=?',[email.trim().toLowerCase()]);
     if(!user||!await bcrypt.compare(senha,user.senha_hash)) return res.status(401).json({error:'E-mail ou senha invalidos.'});
-    if(user.ativo===0||user.arena_status===-1) return res.status(403).json({error:'Conta indisponivel.'});
+    if(user.ativo!==1||user.activation_pending||user.arena_status===-1) return res.status(403).json({error:'Conta indisponivel.'});
     if(user.perfil==='SuperAdmin' && typeof req.body.recovery_code==='string') {
       await require('../config/securitySchema').ensureSecuritySchema(db);
       await db.transaction(async()=>{
@@ -23,12 +25,12 @@ const login = async (req,res) => {
       });
       user.two_factor_secret=null;
     }
-    if(user.perfil==='SuperAdmin' && user.two_factor_secret && require('../utils/security').decrypt(user.two_factor_secret)!=='JBSWY3DPEHPK3PXP' && !require('../utils/totp').verify(user.two_factor_secret,req.body.codigo_2fa)) return res.status(403).json({error:'Segundo fator obrigatorio.',requires_2fa:true});
-    const token=await issueSession(user,req,res);
+    if(user.perfil==='SuperAdmin' && user.two_factor_secret && !require('../utils/totp').verify(user.two_factor_secret,req.body.codigo_2fa)) return res.status(403).json({error:'Segundo fator obrigatorio.',requires_2fa:true});
     if(user.perfil==='Cliente'&&user.tenant_id) await require('../services/clientAccessService').membership(user,user.tenant_id,true);
+    await issueSession(user,req,res);
     logAuditEvent(user.id,'Login', 'Sessao iniciada',req.ip);
-    res.json({token,requires_mfa_setup:user.perfil==='SuperAdmin'&&(!user.two_factor_secret||require('../utils/security').decrypt(user.two_factor_secret)==='JBSWY3DPEHPK3PXP'),usuario:{id:user.id,nome:user.nome,email:user.email,perfil:user.perfil,cliente_id:user.cliente_id,tenant_id:user.tenant_id,arena_nome:user.arena_nome,arena_slug:user.arena_slug,arena_status:user.arena_status}});
-  } catch(e){ res.status(e.status||500).json({error:e.status?e.message:'Erro ao iniciar sessao.'}); }
+    res.json({requires_mfa_setup:user.perfil==='SuperAdmin'&&!user.two_factor_secret,usuario:{id:user.id,nome:user.nome,email:user.email,perfil:user.perfil,tenant_id:user.tenant_id,arena_nome:user.arena_nome,arena_slug:user.arena_slug,arena_status:user.arena_status}});
+  } catch(e){ res.status(e.status||500).json({error: require('../utils/security').publicError(e, 'Erro ao iniciar sessao.')}); }
 };
 const logout=async(req,res)=>{ await endSession(req,res); res.json({message:'Sessao encerrada.'}); };
 
@@ -99,7 +101,7 @@ async function handleRegisterAdministrador({ req, res, nome, email, senha_hash, 
     [arenaNomeFinal, finalSlug, email.trim().toLowerCase(), telefone || null, arena_cidade || null, planoIdFinal, diaVencimento, trialExpiraEm, arenaStatus, 'mensal'], 
     async function(err) {
       if (err) {
-        console.error('Erro ao criar arena no register:', err);
+        logger.error('Erro ao criar arena no register:', err);
         return res.status(500).json({ error: 'Erro ao criar arena.' });
       }
       const tenant_id = this.lastID;
@@ -116,7 +118,7 @@ async function handleRegisterAdministrador({ req, res, nome, email, senha_hash, 
             VALUES (?, ?, ?, 'mensal', ?, ?, 'Pendente')
           `, [tenant_id, planoIdFinal, valorFatura, `Assinatura Inicial Plano ${planoNome}`, todayStr]);
         } catch (fatErr) {
-          console.error('Erro ao gerar fatura inicial para arena sem trial:', fatErr);
+          logger.error('Erro ao gerar fatura inicial para arena sem trial:', fatErr);
         }
       }
 
@@ -159,26 +161,32 @@ const register = async (req, res) => {
 
 const forgotPassword=async(req,res)=>{
   try {
+    await require('../config/securitySchema').ensureSecuritySchema(db);
     const email=typeof req.body.email==='string'?req.body.email.trim().toLowerCase():'';
     if(!email||email.length>254) return res.status(400).json({error:'E-mail invalido.'});
-    const user=await db.getAsync('SELECT id,email FROM Usuarios WHERE LOWER(email)=?',[email]);
+    const user=await db.getAsync('SELECT id,email,activation_pending FROM Usuarios WHERE LOWER(email)=?',[email]);
     if(user){
-      const code=await createChallenge(user.id,'password');
-      const link=frontendUrl()+'/redefinir-senha?token='+encodeURIComponent(user.id+'.'+code);
-      await require('../services/emailService').sendEmail(user.email,'Recuperacao de senha','Acesse para redefinir sua senha: '+link);
+      const code=await createChallenge(user.id,user.activation_pending ? 'activation' : 'password');
+      const link=frontendUrl()+'/redefinir-senha?token='+encodeURIComponent(code);
+      void require('../services/emailService').sendEmail(user.email,'Recuperacao de senha','Acesse para redefinir sua senha: '+link).catch(() => logger.error('Falha de entrega de recuperação.'));
     }
     res.json({message:'Se o e-mail estiver cadastrado, enviamos as instrucoes de recuperacao.'});
   }catch(e){res.status(e.status||500).json({error:'Nao foi possivel processar a recuperacao.'});}
 };
 const resetPassword=async(req,res)=>{
   try{
-    const match=/^(\d+)\.([A-Za-z0-9_-]{43})$/.exec(req.body.token||'');
-    if(!match) return res.status(400).json({error:'Token invalido ou expirado.'});
-    const user=await db.getAsync('SELECT perfil,two_factor_secret FROM Usuarios WHERE id=?',[match[1]]);
-    if(user?.perfil==='SuperAdmin'&&user.two_factor_secret&&!require('../utils/totp').verify(user.two_factor_secret,req.body.codigo_2fa)) return res.status(403).json({error:'Segundo fator obrigatorio.'});
-    await resetWithChallenge(Number(match[1]),'password',match[2],req.body.novaSenha);
+    await require('../config/securitySchema').ensureSecuritySchema(db);
+    const token = req.body.token;
+    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) return res.status(400).json({error:'Token invalido ou expirado.'});
+    const challenge = await db.getAsync("SELECT usuario_id,purpose FROM RecoveryChallenges WHERE token_hash=? AND used=0 AND attempts<5 AND expires>? AND purpose IN ('password','activation')", [require('../utils/security').hash(token), Date.now()]);
+    const user = challenge && await db.getAsync('SELECT perfil,two_factor_secret FROM Usuarios WHERE id=?', [challenge.usuario_id]);
+    if(user?.perfil==='SuperAdmin'&&user.two_factor_secret&&!require('../utils/totp').verify(user.two_factor_secret,req.body.codigo_2fa)) {
+      await db.runAsync('UPDATE RecoveryChallenges SET attempts=attempts+1 WHERE token_hash=? AND used=0',[require('../utils/security').hash(token)]);
+      return res.status(403).json({error:'Segundo fator obrigatorio.'});
+    }
+    await resetWithChallenge(challenge?.usuario_id ?? -1,challenge?.purpose || 'password',token,req.body.novaSenha);
     res.json({message:'Senha redefinida. Faca login novamente.'});
-  }catch(e){res.status(e.status||500).json({error:e.status?e.message:'Erro ao redefinir senha.'});}
+  }catch(e){res.status(e.status||500).json({error: require('../utils/security').publicError(e, 'Erro ao redefinir senha.')});}
 };
 
 module.exports = { login, logout, register, forgotPassword, resetPassword };

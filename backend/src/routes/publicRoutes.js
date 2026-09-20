@@ -1,3 +1,4 @@
+const { requirePermission } = require('../utils/permissions');
 const express = require('express');
 const router = express.Router();
 const {
@@ -13,9 +14,9 @@ const {
   excluirContaAtleta
 } = require('../controllers/publicController');
 const { cadastrarAtletaPublico, loginAtletaPublico, googleAuthAtletaPublico, getPerfilAtleta, atualizarPerfilAtleta, solicitarRecuperacaoSenhaAtleta, redefinirSenhaAtleta } = require('../controllers/athleteAuthController');
-const { verifyToken, requireRole } = require('../middlewares/auth');
+const { verifyToken } = require('../middlewares/auth');
 const { requireReservationAccess } = require('../services/clientAccessService');
-const athlete = [verifyToken, requireRole(['Cliente'])];
+const athlete = [verifyToken, requirePermission('athlete.self')];
 
 
 const {

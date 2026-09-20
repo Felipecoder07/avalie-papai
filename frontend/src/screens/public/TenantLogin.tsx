@@ -51,11 +51,9 @@ export function TenantLogin() {
         return;
       }
 
-      const safeToken = typeof data.token === 'string' ? data.token.replace(/[^a-zA-Z0-9._\-]/g, '').trim() : '';
       const safeUser = data.usuario ? JSON.stringify(data.usuario).replace(/[<>\0]/g, '') : '';
       const sanitizeStr = (s: unknown): string => typeof s === 'string' ? s.replace(/[<>"'&]/g, '').trim() : '';
 
-      safeStorage.setItem('courtmanager_token', safeToken);
       safeStorage.setItem('courtmanager_user', safeUser);
       if (data.usuario.arena_nome) {
         safeStorage.setItem('arena_nome', sanitizeStr(data.usuario.arena_nome));

@@ -29,16 +29,17 @@ describe('server-validated sessions', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderGuard(perfil);
     expect(await screen.findByText('Conteúdo protegido')).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith('/api/auth/me', { headers: { Authorization: 'Bearer abc.def-ghi' } });
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/me', { credentials: 'same-origin', headers: expect.any(Headers) });
+    expect(fetchMock.mock.calls[0][1].headers.has('authorization')).toBe(false);
     expect(getStoredUser()).toEqual(usuario);
   });
 
   it.each(['SuperAdmin', 'Cliente'] as const)('redirects a missing %s session to its own login', async (perfil) => {
-    const fetchMock = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({ok:false,status:401});
     vi.stubGlobal('fetch', fetchMock);
     renderGuard(perfil);
     expect(await screen.findByText('Login necessário')).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/me', expect.objectContaining({credentials:'same-origin'}));
   });
 
   it.each([
@@ -108,9 +109,10 @@ describe('server-validated sessions', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false });
     vi.stubGlobal('fetch', fetchMock);
     renderGuard('SuperAdmin', true);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/auth/me', { headers: { Authorization: 'Bearer remote-token' } }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/auth/me', { credentials: 'same-origin', headers: expect.any(Headers) }));
+    expect(fetchMock.mock.calls[0][1].headers.has('authorization')).toBe(false);
     expect(await screen.findByText('Login necessário')).toBeInTheDocument();
-    expect(window.location.search).toBe('');
+    expect(safeStorage.getItem('courtmanager_token')).toBeNull();
   });
 });
 

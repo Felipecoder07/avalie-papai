@@ -121,14 +121,11 @@ export default function MyReservations({ slug, athlete, open, onClose, onPayPend
   const fetchReservas = useCallback(async (customPhone?: string) => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('courtmanager_athlete_token') || localStorage.getItem('atleta_token');
       const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+
       const targetPhone = customPhone !== undefined ? customPhone : phone;
       const queryPhone = targetPhone ? `?telefone=${encodeURIComponent(targetPhone)}` : '';
-      
+
       const res = await fetch(`${BACKEND_URL}/api/public/tenant/${slug}/minhas-reservas${queryPhone}`, { headers });
       if (res.ok) {
         const data = await res.json();
@@ -196,11 +193,8 @@ export default function MyReservations({ slug, athlete, open, onClose, onPayPend
     setCancelingLoading(true);
     setToastMessage(null);
     try {
-      const token = localStorage.getItem('courtmanager_athlete_token') || localStorage.getItem('atleta_token');
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+
 
       const res = await fetch(`${BACKEND_URL}/api/public/tenant/${slug}/cancelar-reserva/${reservaId}`, {
         method: 'POST',
@@ -302,7 +296,7 @@ ${moneyEmoji} *Valor Pago:* R$ ${data.reserva.valor_total.toFixed(2)}`;
         onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') onClose(); }}
       />
       <div className="relative w-full max-w-[395px] bg-card rounded-3xl shadow-sheet animate-scaleIn max-h-[80vh] flex flex-col overflow-hidden">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-4 pb-3 shrink-0 border-b border-edge">
           <h2 className="text-base font-bold text-charcoal flex items-center gap-2">
@@ -533,7 +527,7 @@ ${moneyEmoji} *Valor Pago:* R$ ${data.reserva.valor_total.toFixed(2)}`;
                   {cancelModalData.codigo_validacao}
                 </span>
               </div>
-              
+
               <div className="space-y-1 text-charcoal/80 pt-1">
                 <p><strong>Reserva nº:</strong> #{cancelModalData.reserva.id}</p>
                 <p><strong>Cliente:</strong> {cancelModalData.reserva.cliente_nome}</p>
@@ -735,7 +729,7 @@ ${EMOJI.card} Status: ${reserva.status_pagamento === 'Pago' ? 'PAGO' : reserva.s
             <Share2 size={16} />
             Compartilhar Recibo no WhatsApp
           </button>
-          
+
           <div className="flex gap-2">
             <button
               onClick={handlePrint}
@@ -756,5 +750,3 @@ ${EMOJI.card} Status: ${reserva.status_pagamento === 'Pago' ? 'PAGO' : reserva.s
     </div>
   );
 }
-
-

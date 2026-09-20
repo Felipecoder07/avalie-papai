@@ -397,25 +397,7 @@
        ANIMATIONS
     ================================================ */
 
-    @keyframes shake {
 
-      0%,
-      100% {
-        transform: translateX(0);
-      }
-
-      15%,
-      45%,
-      75% {
-        transform: translateX(-5px);
-      }
-
-      30%,
-      60%,
-      90% {
-        transform: translateX(5px);
-      }
-    }
 
     .shake {
       animation: shake 0.45s cubic-bezier(.36, .07, .19, .97) both;
@@ -508,4 +490,24 @@
   }
   .btn-full { width: 100%; }
 
+}
+
+@keyframes shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  15%,
+  45%,
+  75% {
+    transform: translateX(-5px);
+  }
+
+  30%,
+  60%,
+  90% {
+    transform: translateX(5px);
+  }
 }

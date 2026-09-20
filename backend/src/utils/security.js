@@ -3,7 +3,15 @@ const crypto = require('node:crypto');
 const production = () => process.env.NODE_ENV === 'production';
 const hash = value => crypto.createHash('sha256').update(String(value)).digest('hex');
 const secret = () => crypto.randomBytes(32).toString('base64url');
-function httpError(status, message) { return Object.assign(new Error(message), { status }); }
+const publicErrors = new WeakSet();
+function httpError(status, message) {
+  const error = Object.assign(new Error(message), { status });
+  publicErrors.add(error);
+  return error;
+}
+function publicError(error, fallback = 'Não foi possível concluir a operação.') {
+  return publicErrors.has(error) ? error.message : fallback;
+}
 function passwordError(value) {
   return typeof value !== 'string' || value.length < 8 || Buffer.byteLength(value, 'utf8') > 72
     ? 'A senha deve ter pelo menos 8 caracteres e no máximo 72 bytes.' : null;
@@ -46,5 +54,5 @@ function decrypt(value) {
   decipher.setAuthTag(Buffer.from(tag, 'base64url'));
   return Buffer.concat([decipher.update(Buffer.from(data, 'base64url')), decipher.final()]).toString('utf8');
 }
-const simulationAllowed = () => !production() && (process.env.NODE_ENV === 'test' || process.env.ENABLE_PAYMENT_SIMULATION === 'true');
-module.exports = { production, hash, secret, httpError, passwordError, cents, frontendUrl, validateEnvironment, encrypt, decrypt, simulationAllowed };
+const simulationAllowed = () => process.env.NODE_ENV === 'test';
+module.exports = { production, hash, secret, httpError, publicError, passwordError, cents, frontendUrl, validateEnvironment, encrypt, decrypt, simulationAllowed };

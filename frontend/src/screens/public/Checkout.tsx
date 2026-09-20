@@ -83,7 +83,6 @@ const performRegistrationAndLogin = async (
 
   if (loginResponse.ok) {
     const loginData = await loginResponse.json();
-    safeStorage.setItem('courtmanager_token', loginData.token);
     safeStorage.setItem('courtmanager_user', JSON.stringify(loginData.usuario));
     if (loginData.usuario.arena_nome) {
       safeStorage.setItem('arena_nome', loginData.usuario.arena_nome);

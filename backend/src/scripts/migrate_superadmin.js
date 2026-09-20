@@ -1,3 +1,5 @@
+if (process.env.NODE_ENV !== 'test') throw new Error('Fixture restrita aos testes. Use convite ou recuperação verificada.');
+const logger = require('../utils/safeLogger').forModule('migrate_superadmin');
 const sqlite3 = require('sqlite3').verbose();
 const path = require("node:path");
 const bcrypt = require('bcrypt');
@@ -8,19 +10,19 @@ const db = new sqlite3.Database(dbPath);
 const migrate = async () => {
   return new Promise((resolve, reject) => {
     db.serialize(async () => {
-      console.log('Iniciando migração...');
+      logger.log('Iniciando migração...');
 
       // 1. Add status to Arenas
       try {
         await new Promise((res, rej) => {
           db.run("ALTER TABLE Arenas ADD COLUMN status INTEGER DEFAULT 1;", (err) => {
             if (err && !err.message.includes('duplicate column')) {
-              console.log('Aviso ao alterar Arenas:', err.message);
+              logger.log('Aviso ao alterar Arenas:', err.message);
             }
             res();
           });
         });
-        console.log('Coluna status garantida em Arenas.');
+        logger.log('Coluna status garantida em Arenas.');
       } catch(e) {}
 
       // 2. Recreate Usuarios for CHECK constraint
@@ -44,14 +46,14 @@ const migrate = async () => {
       `);
 
       db.run(`INSERT INTO Usuarios_new SELECT * FROM Usuarios;`, (err) => {
-        if(err) console.error('Erro ao copiar usuários:', err);
+        if(err) logger.error('Erro ao copiar usuários:', err);
       });
       db.run(`DROP TABLE Usuarios;`);
       db.run(`ALTER TABLE Usuarios_new RENAME TO Usuarios;`);
       db.run(`COMMIT;`);
       db.run("PRAGMA foreign_keys=on;");
 
-      console.log('Tabela Usuarios recriada com sucesso.');
+      logger.log('Tabela Usuarios recriada com sucesso.');
 
       // 3. Create SuperAdmin default user
       const senha_hash = await bcrypt.hash('admin123', 12);
@@ -60,11 +62,11 @@ const migrate = async () => {
         ['Super Administrador', 'admin@courtmanager.com', senha_hash, 'SuperAdmin'],
         (err) => {
           if (err && err.message.includes('UNIQUE')) {
-            console.log('SuperAdmin já existe.');
+            logger.log('SuperAdmin já existe.');
           } else if (err) {
-            console.error('Erro ao criar SuperAdmin:', err.message);
+            logger.error('Erro ao criar SuperAdmin:', err.message);
           } else {
-            console.log('SuperAdmin admin@courtmanager.com (senha: admin123) criado.');
+            logger.log('SuperAdmin admin@courtmanager.com (senha: admin123) criado.');
           }
           resolve();
         }
@@ -74,6 +76,6 @@ const migrate = async () => {
 };
 
 migrate().then(() => {
-  console.log('Migração finalizada.');
+  logger.log('Migração finalizada.');
   db.close();
 });

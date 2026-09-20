@@ -29,6 +29,7 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
 
   // Senha
   const [password, setPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
 
@@ -58,11 +59,9 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
   // Carrega os dados reais do atleta do backend ao abrir
   useEffect(() => {
     if (!open) return;
-    const token = localStorage.getItem('atleta_token');
-    if (!token) return;
 
     fetch(`${BACKEND_URL}/api/public/tenant/${slug}/meu-perfil`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: {}
     })
       .then(r => r.json())
       .then(data => {
@@ -113,19 +112,16 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
           const sy = (img.height - minDim) / 2;
           ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, SIZE, SIZE);
           const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
-          
+
           // 1. Atualiza preview na tela imediatamente
           setAvatarUrl(compressedBase64);
 
           // 2. AUTO-SAVE Instantâneo em segundo plano no Backend
           try {
-            const token = localStorage.getItem('atleta_token');
             const res = await fetch(`${BACKEND_URL}/api/public/tenant/${slug}/meu-perfil`, {
               method: 'PUT',
               headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`
-              },
+                'Content-Type': 'application/json',},
               body: JSON.stringify({ avatar_url: compressedBase64 })
             });
 
@@ -160,15 +156,12 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
     setSuccessData(null);
     setLoadingData(true);
 
-    const token = localStorage.getItem('atleta_token');
 
     try {
       const res = await fetch(`${BACKEND_URL}/api/public/tenant/${slug}/meu-perfil`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
+          'Content-Type': 'application/json',},
         body: JSON.stringify({
           nome: name.trim(),
           telefone: phone.trim(),
@@ -206,8 +199,8 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
     setErrorPwd(null);
     setSuccessPwd(null);
 
-    if (password.length < 6) {
-      setErrorPwd('A senha deve possuir no mínimo 6 caracteres.');
+    if (password.length < 8 || new TextEncoder().encode(password).length > 72) {
+      setErrorPwd('Use pelo menos 8 caracteres e no máximo 72 bytes.');
       return;
     }
     if (password !== confirmPassword) {
@@ -216,16 +209,13 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
     }
 
     setLoadingPwd(true);
-    const token = localStorage.getItem('atleta_token');
 
     try {
       const res = await fetch(`${BACKEND_URL}/api/public/tenant/${slug}/meu-perfil`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ nova_senha: password })
+          'Content-Type': 'application/json',},
+        body: JSON.stringify({ nova_senha: password, senha_atual: currentPassword })
       });
 
       const data = await res.json();
@@ -233,6 +223,7 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
       if (res.ok && data.usuario) {
         setSuccessPwd('Senha alterada com sucesso!');
         setPassword('');
+        setCurrentPassword('');
         setConfirmPassword('');
         setTimeout(() => setSuccessPwd(null), 3000);
       } else {
@@ -250,18 +241,11 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
     setDeletingLoading(true);
     setDeleteError(null);
     try {
-      const token = localStorage.getItem('courtmanager_athlete_token') || localStorage.getItem('atleta_token');
-      if (!token) {
-        setDeleteError('Você precisa estar autenticado para excluir sua conta.');
-        setDeletingLoading(false);
-        return;
-      }
+
       const res = await fetch(`${BACKEND_URL}/api/public/tenant/${slug}/excluir-conta`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+          'Content-Type': 'application/json',},
         body: JSON.stringify({
           phone: athlete.phone,
           email: athlete.email
@@ -269,8 +253,7 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        localStorage.removeItem('atleta_token');
-        localStorage.removeItem('atleta_session');
+        localStorage.removeItem('athlete_profile');
         setShowDeleteModal(false);
         setTimeout(() => {
           onClose();
@@ -468,6 +451,7 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
               </div>
 
               <form onSubmit={handleSavePassword} className="space-y-3">
+                <label className="text-xs font-bold block">Senha atual<input className="block w-full rounded-xl border border-edge p-3" type="password" autoComplete="current-password" required value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} /></label>
                 <div>
                   <label className="text-xs font-bold text-charcoal/70 block mb-1">Nova Senha</label>
                   <div className="flex items-center gap-2.5 rounded-xl border border-edge bg-cream px-3 h-11">
@@ -475,10 +459,10 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
                     <input
                       type={showPwd ? 'text' : 'password'}
                       required
-                      minLength={6}
+                      minLength={8}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Mínimo 6 caracteres"
+                      placeholder="Mínimo 8 caracteres"
                       className="flex-1 bg-transparent outline-none text-xs text-charcoal"
                     />
                     <button
@@ -498,7 +482,7 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
                     <input
                       type={showPwd ? 'text' : 'password'}
                       required
-                      minLength={6}
+                      minLength={8}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Repita a nova senha"
@@ -627,4 +611,3 @@ export default function MyProfileModal({ slug, athlete, open, onClose, onUpdate,
     </div>
   );
 }
-

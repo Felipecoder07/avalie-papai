@@ -29,8 +29,7 @@ export function MasterComunicacao() {
 
   const fetchDados = async () => {
     try {
-      const token = localStorage.getItem('courtmanager_token');
-      const headers = { 'Authorization': `Bearer ${token}` };
+      const headers = {};
 
       const [arenasRes, BannersRes] = await Promise.all([
         fetch('/api/saas/arenas', { headers }).then(r => r.json()),
@@ -59,11 +58,9 @@ export function MasterComunicacao() {
     setErrorMsg('');
     setSent(false);
     try {
-      const token = localStorage.getItem('courtmanager_token');
       const res = await fetch('/api/saas/comunicados', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -93,7 +90,6 @@ export function MasterComunicacao() {
     setBroadcastErrorMsg('');
     setBroadcastSent(false);
     try {
-      const token = localStorage.getItem('courtmanager_token');
       
       // Define a data de expiração (se for agendado para depois, expira 7 dias após o agendamento)
       let expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -104,7 +100,6 @@ export function MasterComunicacao() {
       const res = await fetch('/api/saas/comunicados', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -134,10 +129,9 @@ export function MasterComunicacao() {
   const handleRemoveBanner = async () => {
     if (!removeBanner) return;
     try {
-      const token = localStorage.getItem('courtmanager_token');
       const res = await fetch(`/api/saas/comunicados/${removeBanner}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         fetchDados();

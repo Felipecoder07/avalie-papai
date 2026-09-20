@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('saasController');
 const {fetch} = require('../utils/providerHttp');
 const { encrypt, decrypt, secret: randomSecret, passwordError } = require('../utils/security');
 const db = require('../config/database');
@@ -146,7 +147,7 @@ const getMetrics = async (req, res) => {
       arenasBloqueadas: arenasBloqueadas.total,
       totalClientes: totalClientes.total,
       totalQuadras: totalQuadras.total,
-      totalReceitaSaaS: mrr.valor || 0,
+      totalReceitaSaaS: (mrr.valor || 0) / 100,
       arenasTrial: arenasTrial.total,
       churnRate: Number.parseFloat(churn.toFixed(1)),
       reservasHoje: reservasHoje.total,
@@ -156,16 +157,16 @@ const getMetrics = async (req, res) => {
       reservasVariacao,
       clientesNovos30d: novosClientes30d.total,
       mrrVariacao,
-      faturamentoHistorico
+      faturamentoHistorico: faturamentoHistorico.map(h => ({ ...h, total: h.total / 100 }))
     });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao buscar métricas.' });
   }
 };
 
 const createArena = async (req, res) => {
-  const { nome, email, telefone, endereco, plano_id, dia_vencimento, trial_dias, senha } = req.body;
+  const { nome, email, telefone, endereco, plano_id, dia_vencimento, trial_dias } = req.body;
 
   if (!nome || !email) {
     return res.status(400).json({ error: 'Nome da arena e e-mail do responsável são obrigatórios.' });
@@ -202,17 +203,19 @@ const createArena = async (req, res) => {
     const tenantId = resArena.lastID;
 
     const bcrypt = require('bcrypt');
-    const senhaHash = await bcrypt.hash(senha || randomSecret(), 12);
-    await db.runAsync(`
-      INSERT INTO Usuarios (nome, email, senha_hash, perfil, tenant_id)
-      VALUES (?, ?, ?, 'Administrador', ?)
+    const senhaHash = await bcrypt.hash(randomSecret(), 12);
+    const invited = await db.runAsync(`
+      INSERT INTO Usuarios (nome, email, senha_hash, perfil, tenant_id, activation_pending)
+      VALUES (?, ?, ?, 'Administrador', ?, 1)
     `, [`Admin ${nome}`, email.trim().toLowerCase(), senhaHash, tenantId]);
 
+    const activation = await require('../services/recoveryService').createChallenge(invited.lastID, 'activation');
+    await require('../services/emailService').sendEmail(email.trim().toLowerCase(), 'Ative seu acesso', 'Defina sua senha (validade: 1 hora): '+require('../utils/security').frontendUrl()+'/redefinir-senha?token='+activation);
     logAuditEvent(req.user.id, 'SaaS: Arena Criada', `Arena '${nome}' (ID: ${tenantId}) cadastrada com plano ID: ${planoIdFinal}`, req.ip);
 
     res.status(201).json({ message: 'Arena cadastrada com sucesso.', id: tenantId });
   } catch (err) {
-    console.error('Erro ao criar arena pelo Master:', err);
+    logger.error('Erro ao criar arena pelo Master:', err);
     if (err.message && err.message.includes('UNIQUE')) {
       return res.status(400).json({ error: 'E-mail do responsável já cadastrado no sistema.' });
     }
@@ -369,7 +372,7 @@ const deleteArena = async (req, res) => {
 const getPlanosSaaS = async (req, res) => {
   try {
     const planos = await db.allAsync('SELECT * FROM PlanosSaaS ORDER BY valor_mensal ASC');
-    res.json(planos);
+    res.json(planos.map(p => ({ ...p, valor_mensal: p.valor_mensal / 100, valor_anual: p.valor_anual / 100 })));
   } catch (err) {
     res.status(500).json({ error: 'Erro ao buscar planos.' });
   }
@@ -419,7 +422,7 @@ const getFaturasSaaS = async (req, res) => {
       WHERE f.tenant_id = ? 
       ORDER BY f.data_vencimento DESC
     `, [id]);
-    res.json(faturas);
+    res.json(faturas.map(f => ({ ...f, valor: f.valor / 100 })));
   } catch (err) {
     res.status(500).json({ error: 'Erro ao buscar faturas.' });
   }
@@ -458,7 +461,7 @@ const payFaturaSaaS = async (req, res) => {
         : 'Pagamento registrado com sucesso.' 
     });
   } catch (err) {
-    console.error('[payFaturaSaaS Error]', err);
+    logger.error('[payFaturaSaaS Error]', err);
     res.status(500).json({ error: 'Erro ao registrar pagamento.' });
   }
 };
@@ -466,19 +469,7 @@ const payFaturaSaaS = async (req, res) => {
 /**
  * Obtém o segredo do Webhook do Mercado Pago Master configurado no banco ou .env.
  */
-const getMasterWebhookSecret = async () => {
-  const row = await db.getAsync("SELECT valor FROM ConfiguracoesSaaS WHERE chave = 'mp_webhook_secret'");
-  if (row && row.valor && row.valor.trim() !== '') {
-    return row.valor.trim();
-  }
-  if (process.env.MERCADO_PAGO_WEBHOOK_SECRET && process.env.MERCADO_PAGO_WEBHOOK_SECRET.trim() !== '') {
-    return process.env.MERCADO_PAGO_WEBHOOK_SECRET.trim();
-  }
-  if (process.env.MP_WEBHOOK_SECRET && process.env.MP_WEBHOOK_SECRET.trim() !== '') {
-    return process.env.MP_WEBHOOK_SECRET.trim();
-  }
-  return null;
-};
+const getMasterWebhookSecret = () => require('../services/credentialService').readCredential('mp_webhook_secret');
 
 /**
  * Valida a autenticidade da notificação de Webhook do Mercado Pago via HMAC-SHA256.
@@ -507,7 +498,7 @@ function verificarAssinaturaMP(req, secret) {
   const nowSec = Math.floor(Date.now() / 1000);
   const tsNum = Number.parseInt(ts, 10);
   if (isNaN(tsNum) || Math.abs(nowSec - tsNum) > 900) {
-    console.warn(`[SaaS Webhook] Rejeitado por Replay Attack / Timestamp expirado: ts=${ts}, now=${nowSec}`);
+    logger.warn(`[SaaS Webhook] Rejeitado por Replay Attack / Timestamp expirado: ts=${ts}, now=${nowSec}`);
     return false;
   }
 
@@ -561,7 +552,7 @@ const getAllFaturasSaaS = async (req, res) => {
       JOIN Arenas a ON f.tenant_id = a.id
       ORDER BY f.data_vencimento DESC
     `);
-    res.json(faturas);
+    res.json(faturas.map(f => ({ ...f, valor: f.valor / 100 })));
   } catch (err) {
     res.status(500).json({ error: 'Erro ao buscar todas as faturas.' });
   }
@@ -594,6 +585,16 @@ const updatePlanoSaaS = async (req, res) => {
   if (valor_mensal === null || valor_mensal === undefined || isNaN(Number(valor_mensal))) valor_mensal = 0;
   if (valor_anual === null || valor_anual === undefined || isNaN(Number(valor_anual))) valor_anual = 0;
 
+  const { cents } = require('../utils/security');
+  let mensalCents = 0;
+  let anualCents = 0;
+  try {
+    mensalCents = cents(valor_mensal);
+    anualCents = cents(valor_anual);
+  } catch (e) {
+    return res.status(400).json({ error: 'Valores monetários inválidos.' });
+  }
+
   if (!nome || nome.trim() === '') {
     return res.status(400).json({ error: 'O nome do plano é obrigatório.' });
   }
@@ -607,7 +608,7 @@ const updatePlanoSaaS = async (req, res) => {
       UPDATE PlanosSaaS 
       SET nome = ?, max_quadras = ?, max_usuarios = ?, valor_mensal = ?, valor_anual = ? 
       WHERE id = ?
-    `, [nome, max_quadras, max_usuarios, valor_mensal, valor_anual, id]);
+    `, [nome, max_quadras, max_usuarios, mensalCents, anualCents, id]);
 
     logAuditEvent(req.user.id, 'SaaS: Plano Editado', `Plano ID: ${id}, Nome: ${nome}, Valor: ${valor_mensal}, Anual: ${valor_anual}`, req.ip);
     res.json({ message: 'Plano atualizado com sucesso.' });
@@ -659,7 +660,7 @@ function verifyTOTP(secret, code, window = 1) {
       }
     }
   } catch (err) {
-    console.error('Erro na validação TOTP:', err);
+    logger.error('Erro na validação TOTP:', err);
   }
   return false;
 }
@@ -684,56 +685,12 @@ const getActiveSessions = async (req, res) => {
 
     res.json(formattedSessions);
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao buscar sessões ativas.' });
   }
 };
 
-const changeMasterPassword = async (req, res) => {
-  const superAdminId = req.user.id;
-  const { senha_atual, nova_senha, codigo_2fa } = req.body;
-
-  if (!senha_atual || !nova_senha || !codigo_2fa) {
-    return res.status(400).json({ error: 'Todos os campos (senha atual, nova senha e código 2FA) são obrigatórios.' });
-  }
-
-  if (nova_senha.length < 8) {
-    return res.status(400).json({ error: 'A nova senha deve ter no mínimo 8 caracteres.' });
-  }
-
-  try {
-    const user = await db.getAsync('SELECT senha_hash, two_factor_secret FROM Usuarios WHERE id = ?', [superAdminId]);
-    if (!user) {
-      return res.status(404).json({ error: 'Usuário não encontrado.' });
-    }
-
-    const senhaValida = await bcrypt.compare(senha_atual, user.senha_hash);
-    if (!senhaValida) {
-      return res.status(401).json({ error: 'A senha atual informada está incorreta.' });
-    }
-
-    const novaSenhaIgual = await bcrypt.compare(nova_senha, user.senha_hash);
-    if (novaSenhaIgual) {
-      return res.status(400).json({ error: 'A nova senha não pode ser idêntica à senha atual.' });
-    }
-
-    const secret = user.two_factor_secret;
-    const is2faValido = require('../utils/totp').verify(secret, codigo_2fa.trim());
-    if (!is2faValido) {
-      return res.status(401).json({ error: 'O código 2FA fornecido é inválido ou expirou.' });
-    }
-
-    const hash = await bcrypt.hash(nova_senha, 12);
-    await db.runAsync('UPDATE Usuarios SET senha_hash = ? WHERE id = ?', [hash, superAdminId]);
-
-    logAuditEvent(superAdminId, 'SaaS: Senha Alterada', 'Senha master alterada com confirmação de 2FA', req.ip);
-
-    res.json({ message: 'Senha master alterada com sucesso!' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erro ao alterar a senha master.' });
-  }
-};
+const changeMasterPassword = require('./passwordController').changeOwnPassword;
 
 const getUsuariosSaaS = async (req, res) => {
   try {
@@ -746,7 +703,7 @@ const getUsuariosSaaS = async (req, res) => {
     `);
     res.json(users);
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao listar usuários.' });
   }
 };
@@ -765,18 +722,18 @@ const toggleUsuarioStatus = async (req, res) => {
 
     res.json({ message: 'Status do usuário alterado com sucesso.', ativo: newStatus });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao alterar status do usuário.' });
   }
 };
 
 const resetUsuarioPassword=async(req,res)=>{
  try {
-  const user=await db.getAsync('SELECT id,email,perfil FROM Usuarios WHERE id=?',[req.params.id]);
+  const user=await db.getAsync('SELECT id,email,perfil,activation_pending FROM Usuarios WHERE id=?',[req.params.id]);
   if(!user) return res.sendStatus(404);
   if(user.perfil==='SuperAdmin') return res.status(403).json({error:'Use recuperacao pessoal com segundo fator.'});
-  const code=await require('../services/recoveryService').createChallenge(user.id);
-  const url=require('../utils/security').frontendUrl()+'/redefinir-senha?token='+user.id+'.'+code;
+  const code=await require('../services/recoveryService').createChallenge(user.id,user.activation_pending ? 'activation' : 'password');
+  const url=require('../utils/security').frontendUrl()+'/redefinir-senha?token='+code;
   await require('../services/sessionService').revokeUser(user.id);
   await require('../services/emailService').sendEmail(user.email,'Redefinir senha','Defina sua senha (validade: 1 hora): '+url);
   res.json({message:'Link individual de redefinicao enviado ao e-mail cadastrado.'});
@@ -795,7 +752,7 @@ const getUsuarioAcessos = async (req, res) => {
     `);
     res.json(logs);
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao buscar acessos do usuário.' });
   }
 };
@@ -813,7 +770,7 @@ const getComunicadosSaaS = async (req, res) => {
     const rows = await db.allAsync(query);
     res.json(rows);
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao listar comunicados.' });
   }
 };
@@ -869,14 +826,14 @@ const createComunicadoSaaS = async (req, res) => {
             }
           }
         } catch (e) {
-          console.error('[SMTP] Erro ao disparar e-mails de comunicado:', e.message);
+          logger.error('[SMTP] Erro ao disparar e-mails de comunicado:', e.message);
         }
       })();
     }
 
     res.json({ message: 'Comunicado criado com sucesso!' });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao criar comunicado.' });
   }
 };
@@ -888,7 +845,7 @@ const deleteComunicadoSaaS = async (req, res) => {
     logAuditEvent(req.user.id, 'SaaS: Remover Comunicado', `Comunicado ID: ${id} desativado`, req.ip);
     res.json({ message: 'Comunicado removido com sucesso.' });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao remover comunicado.' });
   }
 };
@@ -912,9 +869,9 @@ const syncEnvFile = (keyValues) => {
       process.env[key] = String(val);
     }
     fs.writeFileSync(envPath, content, 'utf8');
-    console.log('[SaaS Config] Arquivo .env e process.env sincronizados com sucesso!');
+    logger.log('[SaaS Config] Arquivo .env e process.env sincronizados com sucesso!');
   } catch (err) {
-    console.error('Erro ao sincronizar .env:', err);
+    logger.error('Erro ao sincronizar .env:', err);
   }
 };
 
@@ -929,9 +886,9 @@ const getConfiguracoesSaaS = async (req, res) => {
     });
 
     const dbClientId = configMap['mp_client_id'] || process.env.MERCADO_PAGO_CLIENT_ID || '';
-    const dbClientSecret = configMap['mp_client_secret'] || process.env.MERCADO_PAGO_CLIENT_SECRET || '';
-    const dbMasterToken = configMap['mp_master_access_token'] || process.env.MERCADO_PAGO_ACCESS_TOKEN || '';
-    const dbWebhookSecret = configMap['mp_webhook_secret'] || process.env.MERCADO_PAGO_WEBHOOK_SECRET || process.env.MP_WEBHOOK_SECRET || '';
+    const dbClientSecret = await require('../services/credentialService').readCredential('mp_client_secret');
+    const dbMasterToken = await require('../services/credentialService').readCredential('mp_master_access_token');
+    const dbWebhookSecret = await require('../services/credentialService').readCredential('mp_webhook_secret');
 
     res.json({
       dias_trial: configMap['dias_trial'] || '14',
@@ -945,7 +902,7 @@ const getConfiguracoesSaaS = async (req, res) => {
       reasons: reasonsRows.map(r => r.motivo)
     });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao buscar configurações.' });
   }
 };
@@ -959,7 +916,7 @@ async function updateGeneralConfigs(body) {
   if (dias_trial !== undefined) {
     const trialNum = Number.parseInt(dias_trial, 10);
     if (Number.isNaN(trialNum) || trialNum < 0) {
-      throw new Error('O período de trial não pode ser um valor negativo.');
+      throw require('../utils/security').httpError(400, 'O período de trial não pode ser um valor negativo.');
     }
     await db.runAsync('INSERT OR REPLACE INTO ConfiguracoesSaaS (chave, valor) VALUES (?, ?)', ['dias_trial', String(trialNum)]);
   }
@@ -978,7 +935,7 @@ async function updateGeneralConfigs(body) {
 async function updateMercadoPagoConfigs(body) {
   if (body.mp_client_id !== undefined) {
     const value = String(body.mp_client_id).trim();
-    if (value && !/^\d{16}$/.test(value)) throw new Error('Mercado Pago: Client ID invalido.');
+    if (value && !/^\d{16}$/.test(value)) throw require('../utils/security').httpError(400, 'Mercado Pago: Client ID invalido.');
     await db.runAsync('INSERT OR REPLACE INTO ConfiguracoesSaaS(chave,valor) VALUES(?,?)',['mp_client_id',value]);
   }
   for (const key of ['mp_client_secret','mp_master_access_token','mp_webhook_secret']) {
@@ -1000,17 +957,17 @@ async function updateReasonsList(reasons) {
 
 const updateConfiguracoesSaaS = async (req, res) => {
   try {
-    await updateGeneralConfigs(req.body);
-    await updateMercadoPagoConfigs(req.body);
-    await updateReasonsList(req.body.reasons);
+    await db.transaction(async () => {
+      await updateGeneralConfigs(req.body);
+      await updateMercadoPagoConfigs(req.body);
+      await updateReasonsList(req.body.reasons);
+    });
 
     logAuditEvent(req.user.id, 'SaaS: Configurações Atualizadas', 'Parâmetros globais do sistema e credenciais de gateway foram salvos', req.ip);
     res.json({ message: 'Configurações atualizadas com sucesso!' });
   } catch (err) {
-    if (err.message && (err.message.includes('trial') || err.message.includes('Mercado Pago'))) {
-      return res.status(400).json({ error: err.message });
-    }
-    console.error(err);
+    if (err.status) return res.status(err.status).json({ error: require('../utils/security').publicError(err) });
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao salvar configurações.' });
   }
 };
@@ -1021,7 +978,7 @@ const triggerAutoBlockCron = async (req, res) => {
     const result = await executarBloqueioInadimplencia();
     res.json({ message: 'Verificação de inadimplência executada com sucesso.', result });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao executar verificação de inadimplência.' });
   }
 };

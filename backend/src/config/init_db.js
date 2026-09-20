@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('init_db');
 const db = require('./database');
 
 const initDb = () => {
@@ -95,7 +96,7 @@ const initDb = () => {
         tenant_id INTEGER DEFAULT 1,
         nome TEXT NOT NULL,
         tipo TEXT,
-        preco_base REAL NOT NULL,
+        preco_base INTEGER NOT NULL, -- em centavos
         hora_abertura TIME DEFAULT '07:00',
         hora_fechamento TIME DEFAULT '22:00',
         status TEXT DEFAULT 'Ativa',
@@ -116,7 +117,7 @@ const initDb = () => {
         data_reserva DATE NOT NULL,
         hora_inicio TIME NOT NULL,
         hora_fim TIME NOT NULL,
-        valor_total REAL NOT NULL,
+        valor_total INTEGER NOT NULL, -- em centavos
         status TEXT DEFAULT 'Confirmada', 
         status_pagamento TEXT DEFAULT 'Pendente',
         motivo_cancelamento_id INTEGER,
@@ -138,7 +139,7 @@ const initDb = () => {
       CREATE TABLE IF NOT EXISTS Pagamentos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         reserva_id INTEGER NOT NULL,
-        valor REAL NOT NULL,
+        valor INTEGER NOT NULL, -- em centavos
         metodo TEXT NOT NULL,
         registrado_por INTEGER,
         registrado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -153,7 +154,7 @@ const initDb = () => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         reserva_id INTEGER NOT NULL,
         gateway_ref TEXT NOT NULL UNIQUE,
-        valor REAL NOT NULL,
+        valor INTEGER NOT NULL, -- em centavos
         status TEXT NOT NULL,
         metodo TEXT NOT NULL,
         criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -182,7 +183,7 @@ const initDb = () => {
     db.run(`
       CREATE TABLE IF NOT EXISTS MotivosCancelamento (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        tenant_id INTEGER NOT NULL,
+        tenant_id INTEGER,
         motivo TEXT NOT NULL,
         criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (tenant_id) REFERENCES Arenas (id)
@@ -234,8 +235,8 @@ const initDb = () => {
         nome TEXT NOT NULL,
         max_quadras INTEGER NOT NULL,
         max_usuarios INTEGER NOT NULL,
-        valor_mensal REAL NOT NULL,
-        valor_anual REAL DEFAULT 0,
+        valor_mensal INTEGER NOT NULL, -- em centavos
+        valor_anual INTEGER DEFAULT 0, -- em centavos
         criado_em DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -243,9 +244,9 @@ const initDb = () => {
     // População Inicial de Planos Default
     db.get('SELECT COUNT(*) as count FROM PlanosSaaS', (err, row) => {
       if (row && row.count === 0) {
-        db.run("INSERT INTO PlanosSaaS (nome, max_quadras, max_usuarios, valor_mensal, valor_anual) VALUES ('Basic', 2, 3, 49.99, 39.99)");
-        db.run("INSERT INTO PlanosSaaS (nome, max_quadras, max_usuarios, valor_mensal, valor_anual) VALUES ('Pro', 5, 10, 79.99, 63.99)");
-        db.run("INSERT INTO PlanosSaaS (nome, max_quadras, max_usuarios, valor_mensal, valor_anual) VALUES ('Enterprise', 999, 999, 499.90, 399.90)");
+        db.run("INSERT INTO PlanosSaaS (nome, max_quadras, max_usuarios, valor_mensal, valor_anual) VALUES ('Basic', 2, 3, 4999, 3999)");
+        db.run("INSERT INTO PlanosSaaS (nome, max_quadras, max_usuarios, valor_mensal, valor_anual) VALUES ('Pro', 5, 10, 7999, 6399)");
+        db.run("INSERT INTO PlanosSaaS (nome, max_quadras, max_usuarios, valor_mensal, valor_anual) VALUES ('Enterprise', 999, 999, 49990, 39990)");
       }
     });
 
@@ -255,7 +256,7 @@ const initDb = () => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         tenant_id INTEGER NOT NULL,
         plano_id INTEGER NOT NULL,
-        valor REAL NOT NULL,
+        valor INTEGER NOT NULL, -- em centavos
         data_vencimento DATE NOT NULL,
         data_pagamento DATE,
         status TEXT DEFAULT 'Pendente', -- Pendente, Paga, Atrasada
@@ -324,13 +325,13 @@ const initDb = () => {
       }
     });
 
-    // Seed de Motivos de Cancelamento Globais (tenant_id = 0)
-    db.get("SELECT COUNT(*) as count FROM MotivosCancelamento WHERE tenant_id = 0", (err, row) => {
+    // Seed de Motivos de Cancelamento Globais (tenant_id = NULL)
+    db.get("SELECT COUNT(*) as count FROM MotivosCancelamento WHERE tenant_id IS NULL", (err, row) => {
       if (row && row.count === 0) {
-        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (0, 'Preço muito alto')");
-        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (0, 'Mudei de sistema')");
-        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (0, 'Arena fechou')");
-        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (0, 'Falta de recursos')");
+        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Preço muito alto')");
+        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Mudei de sistema')");
+        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Arena fechou')");
+        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Falta de recursos')");
       }
     });
 
@@ -394,6 +395,19 @@ const initDb = () => {
     `);
 
     db.run(`
+      CREATE TABLE IF NOT EXISTS ClientMemberships (
+        cliente_id INTEGER NOT NULL,
+        tenant_id INTEGER NOT NULL,
+        usuario_id INTEGER NOT NULL,
+        verified INTEGER DEFAULT 0,
+        PRIMARY KEY (cliente_id, tenant_id, usuario_id),
+        FOREIGN KEY (cliente_id) REFERENCES Clientes(id) ON DELETE CASCADE,
+        FOREIGN KEY (tenant_id) REFERENCES Arenas(id) ON DELETE CASCADE,
+        FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
+      )
+    `);
+
+    db.run(`
       CREATE TABLE IF NOT EXISTS OAuthCodesUsados (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         code TEXT UNIQUE NOT NULL,
@@ -402,7 +416,7 @@ const initDb = () => {
       )
     `);
 
-    console.log('Tabelas base criadas com sucesso!');
+    logger.log('Tabelas base criadas com sucesso!');
   });
 };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clearSession, getStoredUser, restoreRemoteLogin } from '../src/utils/session';
+import { clearSession, getStoredUser } from '../src/utils/session';
 import { safeStorage } from '../src/utils/safeStorage';
 
 const user = { id: 7, nome: 'João %20 Silva', perfil: 'Administrador', cliente_id: 11 };
@@ -34,21 +34,9 @@ describe('persisted sessions', () => {
     expect(localStorage.getItem('theme')).toBe('dark');
   });
 
-  it('restores a remote login and removes its credentials from the address', () => {
-    const params = new URLSearchParams({ token: 'abc.def-ghi', user: btoa(encodeURIComponent(JSON.stringify(user))) });
-    window.history.replaceState({}, '', `/master/dashboard?${params}`);
-    restoreRemoteLogin();
-    expect(getStoredUser()).toEqual(user);
-    expect(safeStorage.getItem('courtmanager_token')).toBe('abc.def-ghi');
-    expect(window.location.search).toBe('');
-    expect(window.location.pathname).toBe('/master/dashboard');
-  });
-
-  it('discards a stale user when remote login metadata is malformed', () => {
-    safeStorage.setItem('courtmanager_user', JSON.stringify(user));
-    window.history.replaceState({}, '', '/master/dashboard?token=abc&user=%25');
-    restoreRemoteLogin();
+  it('ignores credentials supplied in the URL', () => {
+    window.history.replaceState({}, '', '/master/dashboard?token=forged&user=forged');
     expect(getStoredUser()).toBeNull();
-    expect(window.location.search).toBe('');
+    expect(safeStorage.getItem('courtmanager_token')).toBeNull();
   });
 });

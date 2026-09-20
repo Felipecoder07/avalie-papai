@@ -54,24 +54,24 @@ it('unsigned Google identity and legacy JWT are rejected',async()=>{
  expect((await request(app).get('/api/saas/configuracoes').set('Authorization','Bearer '+jwt)).status).toBe(401);
 });
 it('five concurrent settlements credit exactly once and allocate by balance',async()=>{
- await db.runAsync("INSERT INTO TransacoesGateway(reserva_id,gateway_ref,metodo,valor,status) VALUES(1,'991','Pix',100,'Pendente')");
- await Promise.all(Array.from({length:5},()=>settle('991',{valor_pago:100})));
- expect(await db.getAsync('SELECT COUNT(*) AS n,SUM(valor) AS total FROM Pagamentos')).toEqual({n:1,total:100});
+  await db.runAsync("INSERT INTO TransacoesGateway(reserva_id,gateway_ref,metodo,valor,status) VALUES(1,'991','Pix',10000,'Pendente')");
+  await Promise.all(Array.from({length:5},()=>settle('991',{valor_pago:10000})));
+ expect(await db.getAsync('SELECT COUNT(*) AS n,SUM(valor) AS total FROM Pagamentos')).toEqual({n:1,total:10000});
  expect((await db.getAsync('SELECT status_pagamento FROM Reservas WHERE id=2')).status_pagamento).toBe('Pendente');
 });
 it('one real paid currency unit never settles another slot',async()=>{
- await db.runAsync("INSERT INTO TransacoesGateway(reserva_id,gateway_ref,metodo,valor,status) VALUES(1,'992','Pix',1,'Pendente')");await settle('992',{valor_pago:1});
+  await db.runAsync("INSERT INTO TransacoesGateway(reserva_id,gateway_ref,metodo,valor,status) VALUES(1,'992','Pix',100,'Pendente')");await settle('992',{valor_pago:100});
  expect((await db.getAsync('SELECT status_pagamento FROM Reservas WHERE id=1')).status_pagamento).toBe('Parcial');
  expect((await db.getAsync('SELECT status_pagamento FROM Reservas WHERE id=2')).status_pagamento).toBe('Pendente');
- await reverse('992',1);await reverse('992',1);
- expect((await db.getAsync('SELECT SUM(valor) AS total FROM Pagamentos')).total).toBe(0);
+  await reverse('992',100);await reverse('992',100);
+  expect((await db.getAsync('SELECT SUM(valor) AS total FROM Pagamentos')).total).toBe(0);
 });
 it('manual concurrent payments cannot exceed balance; online methods rejected',async()=>{
  const session=await login();
  const responses=await Promise.all(Array.from({length:5},()=>auth(request(app).post('/api/pagamentos'),session).send({reserva_id:1,valor:100,metodo:'Dinheiro'})));
  expect(responses.filter(r=>r.status===201)).toHaveLength(1);
  expect((await auth(request(app).post('/api/pagamentos'),session).send({reserva_id:2,valor:100,metodo:'Pix Online'})).status).toBe(400);
- expect((await db.getAsync('SELECT SUM(valor) AS total FROM Pagamentos')).total).toBe(100);
+ expect((await db.getAsync('SELECT SUM(valor) AS total FROM Pagamentos')).total).toBe(10000);
 });
 it('expired challenge fails and concurrent reset succeeds once',async()=>{
  const {createChallenge,resetWithChallenge}=require('../src/services/recoveryService');

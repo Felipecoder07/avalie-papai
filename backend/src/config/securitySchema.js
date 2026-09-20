@@ -9,6 +9,8 @@ function ensureSecuritySchema(db = require('./database')) {
       `CREATE TABLE IF NOT EXISTS ExternalIdentities (provider TEXT NOT NULL, subject TEXT NOT NULL, usuario_id INTEGER NOT NULL, PRIMARY KEY(provider, subject))`,
       `CREATE TABLE IF NOT EXISTS ClientMemberships (usuario_id INTEGER NOT NULL, tenant_id INTEGER NOT NULL, cliente_id INTEGER NOT NULL, PRIMARY KEY(usuario_id, tenant_id), UNIQUE(tenant_id, cliente_id))`,
       `CREATE TABLE IF NOT EXISTS RecoveryChallenges (token_hash TEXT PRIMARY KEY, usuario_id INTEGER NOT NULL, purpose TEXT NOT NULL, expires INTEGER NOT NULL, attempts INTEGER DEFAULT 0, used INTEGER DEFAULT 0)`,
+      `CREATE TABLE IF NOT EXISTS BookingContacts (grupo_id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, nome TEXT NOT NULL, telefone TEXT, email TEXT, cpf TEXT)`,
+      `CREATE TABLE IF NOT EXISTS BookingCancellations (reserva_id INTEGER PRIMARY KEY, reason TEXT NOT NULL, created INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS GuestAccess (token_hash TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, grupo_id TEXT NOT NULL, expires INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS PaymentIntents (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, reserva_id INTEGER NOT NULL, scope TEXT NOT NULL, method TEXT NOT NULL, amount_cents INTEGER NOT NULL CHECK(amount_cents > 0), state TEXT NOT NULL DEFAULT 'creating', gateway_ref TEXT, response_json TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL)`,
       `CREATE UNIQUE INDEX IF NOT EXISTS one_open_intent ON PaymentIntents(tenant_id, scope, method) WHERE state IN ('creating','pending','unknown')`,
@@ -24,37 +26,21 @@ function ensureSecuritySchema(db = require('./database')) {
       `INSERT OR IGNORE INTO SecurityMigrations(version) VALUES (1)`
     ]) await db.runAsync(sql);
 
-    // Migration v2: Conciliar vínculos legados e limpar clientes vazios duplicados
-    const m2 = await db.getAsync('SELECT version FROM SecurityMigrations WHERE version = 2');
-    if (!m2) {
-      try {
-        const phantom = await db.getAsync("SELECT id FROM Clientes WHERE id = 26 AND (SELECT COUNT(*) FROM Reservas WHERE cliente_id = 26) = 0");
-        if (phantom) {
-          await db.runAsync('DELETE FROM ClientMemberships WHERE cliente_id = 26');
-          await db.runAsync('DELETE FROM Clientes WHERE id = 26');
-        }
-        const users = await db.allAsync("SELECT id, email FROM Usuarios WHERE perfil = 'Cliente'");
-        for (const u of (users || [])) {
-          if (!u.email) continue;
-          const candidates = await db.allAsync(
-            `SELECT id, tenant_id FROM Clientes 
-             WHERE LOWER(email) = LOWER(?)
-               AND id NOT IN (SELECT cliente_id FROM ClientMemberships WHERE usuario_id != ?)
-             ORDER BY (SELECT COUNT(*) FROM Reservas WHERE cliente_id = Clientes.id) DESC, id ASC`,
-            [u.email.trim(), u.id]
-          );
-          for (const c of candidates) {
-            await db.runAsync(
-              'INSERT OR REPLACE INTO ClientMemberships (usuario_id, tenant_id, cliente_id) VALUES (?, ?, ?)',
-              [u.id, c.tenant_id, c.id]
-            );
-          }
-        }
-        await db.runAsync('INSERT OR IGNORE INTO SecurityMigrations(version) VALUES (2)');
-      } catch (eMigration) {
-        console.warn('[Security Schema Migration v2 Warning]', eMigration.message);
-      }
+    const columns = await db.allAsync('PRAGMA table_info(ClientMemberships)');
+    if (!columns.some(column => column.name === 'verified')) {
+      await db.runAsync('ALTER TABLE ClientMemberships ADD COLUMN verified INTEGER NOT NULL DEFAULT 0');
     }
+    const userColumns = await db.allAsync('PRAGMA table_info(Usuarios)');
+    if (!userColumns.some(column => column.name === 'activation_pending')) {
+      await db.runAsync('ALTER TABLE Usuarios ADD COLUMN activation_pending INTEGER NOT NULL DEFAULT 0');
+    }
+    const arenaColumns = await db.allAsync('PRAGMA table_info(Arenas)');
+    if (arenaColumns.length && !arenaColumns.some(column => column.name === 'gateway_user_id')) {
+      await db.runAsync('ALTER TABLE Arenas ADD COLUMN gateway_user_id TEXT');
+    }
+    await require('./migrations/identityCutover').identityCutover(db);
+    // Preserve unproven legacy links for reconciliation, never infer ownership from email.
+    await db.runAsync('INSERT OR IGNORE INTO SecurityMigrations(version) VALUES (3)');
   })();
   ready.set(db, promise);
   promise.catch(() => ready.delete(db));

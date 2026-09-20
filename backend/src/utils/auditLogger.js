@@ -1,3 +1,4 @@
+const logger = require('./safeLogger').forModule('auditLogger');
 const db = require('../config/database');
 
 const logAuditEvent = (usuario_id, evento, detalhes, ip) => {
@@ -8,7 +9,7 @@ const logAuditEvent = (usuario_id, evento, detalhes, ip) => {
         'INSERT INTO LogsAuditoria (tenant_id, usuario_id, evento, detalhes, ip) VALUES (?, ?, ?, ?, ?)',
         [tenant_id, usuario_id, evento, detalhes, ip],
         (err) => {
-          if (err) console.error('Falha ao registrar log de auditoria:', err);
+          if (err) logger.error('Falha ao registrar log de auditoria:', err);
         }
       );
     });
@@ -17,7 +18,7 @@ const logAuditEvent = (usuario_id, evento, detalhes, ip) => {
       'INSERT INTO LogsAuditoria (tenant_id, usuario_id, evento, detalhes, ip) VALUES (NULL, ?, ?, ?, ?)',
       [usuario_id, evento, detalhes, ip],
       (err) => {
-        if (err) console.error('Falha ao registrar log de auditoria sem tenant:', err);
+        if (err) logger.error('Falha ao registrar log de auditoria sem tenant:', err);
       }
     );
   }

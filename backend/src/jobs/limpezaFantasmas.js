@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('limpezaFantasmas');
 const db = require('../config/database');
 const logAuditEvent = require('../utils/auditLogger');
 
@@ -18,7 +19,7 @@ async function executarLimpezaFantasmas() {
     const prazoRow = await db.getAsync("SELECT valor FROM ConfiguracoesSaaS WHERE chave = 'dias_abandono_cadastro'");
     const diasAbandono = Number.parseInt(prazoRow?.valor || '7', 10);
 
-    console.log(`[Job Fantasmas] Iniciando limpeza de cadastros com abandono > ${diasAbandono} dias...`);
+    logger.log(`[Job Fantasmas] Iniciando limpeza de cadastros com abandono > ${diasAbandono} dias...`);
 
     // 2. Buscar arenas elegíveis para limpeza com as 3 condições AND de proteção
     const fantasmas = await db.allAsync(`
@@ -34,11 +35,11 @@ async function executarLimpezaFantasmas() {
     `, [diasAbandono]);
 
     if (fantasmas.length === 0) {
-      console.log('[Job Fantasmas] Nenhum cadastro fantasma encontrado. Banco limpo!');
+      logger.log('[Job Fantasmas] Nenhum cadastro fantasma encontrado. Banco limpo!');
       return { processadas: 0, removidas: 0 };
     }
 
-    console.log(`[Job Fantasmas] ${fantasmas.length} cadastro(s) fantasma encontrado(s). Iniciando remoção...`);
+    logger.log(`[Job Fantasmas] ${fantasmas.length} cadastro(s) fantasma encontrado(s). Iniciando remoção...`);
 
     let removidas = 0;
 
@@ -70,14 +71,14 @@ async function executarLimpezaFantasmas() {
         '127.0.0.1'
       );
 
-      console.log(`[Job Fantasmas] Arena '${arena.nome}' (ID: ${arenaId}) removida. E-mail liberado.`);
+      logger.log(`[Job Fantasmas] Arena '${arena.nome}' (ID: ${arenaId}) removida. E-mail liberado.`);
       removidas++;
     }
 
-    console.log(`[Job Fantasmas] Limpeza concluída. Total removido: ${removidas} arena(s) fantasma.`);
+    logger.log(`[Job Fantasmas] Limpeza concluída. Total removido: ${removidas} arena(s) fantasma.`);
     return { processadas: fantasmas.length, removidas, diasAbandono };
   } catch (error) {
-    console.error('[Job Fantasmas Error] Falha ao executar limpeza de fantasmas:', error);
+    logger.error('[Job Fantasmas Error] Falha ao executar limpeza de fantasmas:', error);
     throw error;
   }
 }

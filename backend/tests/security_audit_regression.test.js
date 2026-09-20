@@ -30,10 +30,10 @@ function googleToken(changes = {}, signingKey = key.privateKey) {
     iss: 'https://accounts.google.com', aud: 'fixture-google-client', iat: now, exp: now + 3600, ...changes,
   }, signingKey, { algorithm: 'RS256', keyid: 'fixture' });
 }
-it.each(['signature', 'issuer', 'audience', 'expired', 'unverified email'])('audit 2: rejects Google token with invalid %s, without issuing a victim session', async problem => {
+it.each(['signature', 'issuer', 'audience', 'expired', 'just expired', 'unverified email'])('audit 2: rejects Google token with invalid %s, without issuing a victim session', async problem => {
   const now = Math.floor(Date.now() / 1000);
   const changes = { issuer: { iss: 'https://attacker.invalid' }, audience: { aud: 'another-app' },
-    expired: { iat: now - 10800, exp: now - 7200 }, 'unverified email': { email_verified: false } };
+    expired: { iat: now - 10800, exp: now - 7200 }, 'just expired': {iat: now - 3600, exp: now - 1}, 'unverified email': { email_verified: false } };
   vi.stubEnv('NODE_ENV', 'production');
   const response = await request(app).post('/api/public/tenant/arena-a/google').send({
     credential: googleToken(changes[problem], problem === 'signature' ? wrongKey.privateKey : key.privateKey),
@@ -88,7 +88,7 @@ it('audit 6: anonymous checkout preserves every field of the foreign customer', 
   expect(response.body.valor_total).toBe(100);
   expect(await db.getAsync('SELECT * FROM Clientes WHERE id=3')).toEqual(before);
   const booking = await db.getAsync('SELECT tenant_id,cliente_id,valor_total,status_pagamento FROM Reservas WHERE id=?',[response.body.reserva_id]);
-  expect(booking).toMatchObject({tenant_id:1,valor_total:100,status_pagamento:'Pendente'});
+  expect(booking).toMatchObject({tenant_id:1,valor_total:10000,status_pagamento:'Pendente'});
   expect(booking.cliente_id).not.toBe(3);
   const cookie = response.headers['set-cookie'].map(value => value.split(';')[0]).join('; ');
   const status = await request(app).get('/api/public/tenant/arena-a/status-reserva/'+response.body.reserva_id).set('Cookie',cookie);
@@ -120,12 +120,30 @@ it('audit 11: same-day expired reset is rejected by HTTP; valid token works once
   const session = await login(actors.admin);
   const before = await db.getAsync('SELECT senha_hash FROM Usuarios WHERE id=1');
   const expired = await createChallenge(1,'password',undefined,-7200000);
-  const response = await request(app).post('/api/auth/reset-password').send({token:'1.'+expired,novaSenha:'ChangedSecure123!'});
+  const response = await request(app).post('/api/auth/reset-password').send({token:expired,novaSenha:'ChangedSecure123!'});
   expect(response.status).toBe(400);
   expect(await db.getAsync('SELECT senha_hash FROM Usuarios WHERE id=1')).toEqual(before);
   const code = await createChallenge(1);
-  const results = await Promise.all([1,2].map(()=>request(app).post('/api/auth/reset-password').send({token:'1.'+code,novaSenha:'ChangedSecure123!'})));
+  const results = await Promise.all([1,2].map(()=>request(app).post('/api/auth/reset-password').send({token:code,novaSenha:'ChangedSecure123!'})));
   expect(results.map(r=>r.status).sort()).toEqual([200,400]);
   expect(await bcrypt.compare('ChangedSecure123!',(await db.getAsync('SELECT senha_hash FROM Usuarios WHERE id=1')).senha_hash)).toBe(true);
   expect((await auth(request(app).get('/api/auth/me'),session)).status).toBe(401);
 });
+it('audit 12: login and me responses do not leak cliente_id or password hash; status verifies slug against tenant', async () => {
+  const adminSession = await login(actors.admin);
+  const meRes = await auth(request(app).get('/api/auth/me'), adminSession);
+  expect(meRes.status).toBe(200);
+  expect(meRes.body.usuario).not.toHaveProperty('cliente_id');
+  expect(meRes.body.usuario).not.toHaveProperty('senha_hash');
+
+  const clientSession = await login(actors.owner);
+  const clientMeRes = await auth(request(app).get('/api/auth/me'), clientSession);
+  expect(clientMeRes.status).toBe(200);
+  expect(clientMeRes.body.usuario).not.toHaveProperty('cliente_id');
+  expect(clientMeRes.body.usuario).not.toHaveProperty('senha_hash');
+
+  // getStatusReservaPublica cross-slug check
+  const crossSlugRes = await auth(request(app).get('/api/public/tenant/arena-b/status-reserva/1'), clientSession);
+  expect(crossSlugRes.status).toBe(404);
+});
+

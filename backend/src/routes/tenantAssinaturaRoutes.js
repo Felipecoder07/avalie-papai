@@ -1,15 +1,17 @@
+const logger = require('../utils/safeLogger').forModule('tenantAssinaturaRoutes');
+const { requirePermission } = require('../utils/permissions');
 const { simulationAllowed } = require('../utils/security');
 const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
-const { verifyToken, requireRole } = require('../middlewares/auth');
+const { verifyToken } = require('../middlewares/auth');
 const saasBillingService = require('../services/saasBillingService');
 const logAuditEvent = require('../utils/auditLogger');
 const { formatarCompetencia, calcularProximaDataVencimento, calcularDiasRestantesTrial, NOMES_MESES } = require('../utils/dateUtils');
 
 // Todas as rotas requerem usuário autenticado com perfil Administrador ou Gerente da Arena
 router.use(verifyToken);
-router.use(requireRole(['Administrador', 'Gerente']));
+router.use(requirePermission('subscription.manage'));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. GET /api/tenant/assinatura/plano
@@ -125,8 +127,8 @@ router.get('/plano', async (req, res) => {
       plano: {
         id: arena.plano_id,
         nome: arena.plano_nome || 'Nenhum',
-        valor_mensal: arena.valor_mensal || 0,
-        valor_anual: arena.valor_anual || 0,
+        valor_mensal: arena.valor_mensal ? arena.valor_mensal / 100 : 0,
+        valor_anual: arena.valor_anual ? arena.valor_anual / 100 : 0,
         max_quadras: arena.max_quadras || 0,
         max_usuarios: arena.max_usuarios || 0,
       },
@@ -137,7 +139,7 @@ router.get('/plano', async (req, res) => {
       fatura_atual: faturaAtual || (faturasPagas.length > 0 ? faturasPagas[faturasPagas.length - 1] : null),
     });
   } catch (err) {
-    console.error('[Tenant Assinatura API Error]', err);
+    logger.error('[Tenant Assinatura API Error]', err);
     res.status(500).json({ error: 'Erro ao buscar dados da assinatura.' });
   }
 });
@@ -180,7 +182,7 @@ router.get('/faturas', async (req, res) => {
 
     res.json(faturasFormatadas);
   } catch (err) {
-    console.error('[Tenant Assinatura API Error]', err);
+    logger.error('[Tenant Assinatura API Error]', err);
     res.status(500).json({ error: 'Erro ao buscar faturas da assinatura.' });
   }
 });
@@ -213,8 +215,8 @@ router.post('/faturas/:id/gerar-pix', async (req, res) => {
     const pixData = await saasBillingService.gerarPixFaturaSaaS(faturaId);
     res.json(pixData);
   } catch (err) {
-    console.error('[Tenant Assinatura Gerar Pix Error]', err);
-    res.status(400).json({ error: err.message || 'Erro ao gerar Pix da fatura.' });
+    logger.error('[Tenant Assinatura Gerar Pix Error]', err);
+    res.status(400).json({ error: require('../utils/security').publicError(err, 'Erro ao gerar Pix da fatura.') });
   }
 });
 
@@ -290,8 +292,8 @@ router.post('/faturas/:id/simular-pagamento', async (req, res) => {
       plano_atualizado: liquidacaoResult.plano_atualizado,
     });
   } catch (err) {
-    console.error('[Tenant Assinatura Simular Pagamento Error]', err);
-    res.status(400).json({ error: err.message || 'Erro ao processar simulação de pagamento.' });
+    logger.error('[Tenant Assinatura Simular Pagamento Error]', err);
+    res.status(400).json({ error: require('../utils/security').publicError(err, 'Erro ao processar simulação de pagamento.') });
   }
 });
 
@@ -319,7 +321,7 @@ async function verificarStatusMercadoPagoAoVivo(fatura) {
       }
     }
   } catch (mpErr) {
-    console.error('[Status Polling MP Live Check Error]', mpErr.message);
+    logger.error('[Status Polling MP Live Check Error]', mpErr.message);
   }
   return null;
 }
@@ -366,7 +368,7 @@ router.get('/status-pagamento/:gateway_ref', async (req, res) => {
       arena_ativa: recheckArena ? recheckArena.status === 1 : fatura.arena_status === 1,
     });
   } catch (err) {
-    console.error('[Tenant Assinatura Status Polling Error]', err);
+    logger.error('[Tenant Assinatura Status Polling Error]', err);
     res.status(500).json({ error: 'Erro ao consultar status do pagamento.' });
   }
 });
@@ -382,9 +384,9 @@ router.get('/planos-disponiveis', async (req, res) => {
       FROM PlanosSaaS
       ORDER BY valor_mensal ASC
     `);
-    res.json(planos);
+    res.json(planos.map(p => ({ ...p, valor_mensal: p.valor_mensal / 100, valor_anual: p.valor_anual / 100 })));
   } catch (err) {
-    console.error('[Tenant Assinatura Planos Error]', err);
+    logger.error('[Tenant Assinatura Planos Error]', err);
     res.status(500).json({ error: 'Erro ao buscar planos disponíveis.' });
   }
 });
@@ -501,15 +503,15 @@ router.post('/solicitar-upgrade', async (req, res) => {
 
     res.json({
       fatura_id: faturaId,
-      valor: valorFinal,
+      valor: valorFinal / 100,
       ciclo: cicloEscolhido,
       descricao: descricaoFinal,
       plano_nome: novoPlano.nome,
       pix: pixData
     });
   } catch (err) {
-    console.error('[Solicitar Upgrade Error]', err);
-    res.status(400).json({ error: err.message || 'Erro ao processar solicitação de upgrade.' });
+    logger.error('[Solicitar Upgrade Error]', err);
+    res.status(400).json({ error: require('../utils/security').publicError(err, 'Erro ao processar solicitação de upgrade.') });
   }
 });
 
@@ -607,7 +609,7 @@ router.post('/adiantar-fatura', async (req, res) => {
 
     res.json({
       fatura_id: faturaId,
-      valor: valorFinal,
+      valor: valorFinal / 100,
       ciclo: ciclo,
       descricao: descricaoFinal,
       data_vencimento: dataVencimento,
@@ -616,8 +618,8 @@ router.post('/adiantar-fatura', async (req, res) => {
       pix: pixData
     });
   } catch (err) {
-    console.error('[Adiantar Fatura Error]', err);
-    res.status(400).json({ error: err.message || 'Erro ao processar adiantamento de fatura.' });
+    logger.error('[Adiantar Fatura Error]', err);
+    res.status(400).json({ error: require('../utils/security').publicError(err, 'Erro ao processar adiantamento de fatura.') });
   }
 });
 
@@ -688,7 +690,7 @@ router.get('/faturas/:id/recibo', async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('[Tenant Assinatura Recibo Error]', err);
+    logger.error('[Tenant Assinatura Recibo Error]', err);
     res.status(500).json({ error: 'Erro ao gerar recibo da fatura.' });
   }
 });

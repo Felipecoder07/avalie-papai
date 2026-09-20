@@ -3,30 +3,21 @@ const { ensureSecuritySchema } = require('../config/securitySchema');
 const { hash, secret, production, httpError } = require('../utils/security');
 const { authenticate, cookies } = require('./sessionService');
 async function membership(user, tenantId, create = false) {
+  if (user?.perfil !== 'Cliente') throw httpError(403, 'Operação exclusiva de atleta.');
   await ensureSecuritySchema(db);
   return db.transaction(async()=>{
-  let row = await db.getAsync('SELECT c.* FROM ClientMemberships m JOIN Clientes c ON c.id=m.cliente_id AND c.tenant_id=m.tenant_id WHERE m.usuario_id=? AND m.tenant_id=?', [user.id, tenantId]);
+  let row = await db.getAsync('SELECT c.id,c.tenant_id,c.nome,c.email,c.telefone,c.cpf,c.avatar_url,c.ativo FROM ClientMemberships m JOIN Clientes c ON c.id=m.cliente_id AND c.tenant_id=m.tenant_id WHERE m.usuario_id=? AND m.tenant_id=? AND m.verified=1', [user.id, tenantId]);
+  if (row && row.ativo !== 1) throw httpError(403,'Cadastro indisponível nesta arena.');
   if (row || !create) return row;
-  // 1. Explicit legacy link
-  row = user.cliente_id && Number(user.tenant_id) === Number(tenantId)
-    ? await db.getAsync('SELECT * FROM Clientes WHERE id=? AND tenant_id=?', [user.cliente_id, tenantId]) : null;
-  // 2. Existing client record in this tenant matching verified user email
-  if (!row && user.email) {
-    row = await db.getAsync(
-      `SELECT * FROM Clientes 
-       WHERE tenant_id=? AND LOWER(email)=LOWER(?)
-         AND id NOT IN (SELECT cliente_id FROM ClientMemberships WHERE tenant_id=? AND usuario_id!=?)
-       ORDER BY (SELECT COUNT(*) FROM Reservas WHERE cliente_id=Clientes.id) DESC, id ASC`,
-      [tenantId, user.email.trim(), tenantId, user.id]
-    );
-  }
+  const pending = await db.getAsync('SELECT 1 FROM ClientMemberships WHERE usuario_id=? AND tenant_id=? AND verified=0', [user.id, tenantId]);
+  if (pending) throw httpError(403, 'Seu vínculo anterior precisa ser verificado pela arena antes de acessar este cadastro.');
   // 3. Create fresh record if none exists
   if (!row) {
     const inserted = await db.runAsync('INSERT INTO Clientes(tenant_id,nome,email) VALUES(?,?,?)', [tenantId, user.nome, user.email]);
-    row = await db.getAsync('SELECT * FROM Clientes WHERE id=?', [inserted.lastID]);
+    row = await db.getAsync('SELECT id,tenant_id,nome,email,telefone,cpf,avatar_url,ativo FROM Clientes WHERE id=?', [inserted.lastID]);
   }
-  await db.runAsync('INSERT OR REPLACE INTO ClientMemberships(usuario_id,tenant_id,cliente_id) VALUES(?,?,?)', [user.id, tenantId, row.id]);
-  return db.getAsync('SELECT c.* FROM ClientMemberships m JOIN Clientes c ON c.id=m.cliente_id AND c.tenant_id=m.tenant_id WHERE m.usuario_id=? AND m.tenant_id=?', [user.id, tenantId]);
+  await db.runAsync('INSERT INTO ClientMemberships(usuario_id,tenant_id,cliente_id,verified) VALUES(?,?,?,1)', [user.id, tenantId, row.id]);
+  return db.getAsync('SELECT c.id,c.tenant_id,c.nome,c.email,c.telefone,c.cpf,c.avatar_url,c.ativo FROM ClientMemberships m JOIN Clientes c ON c.id=m.cliente_id AND c.tenant_id=m.tenant_id WHERE m.usuario_id=? AND m.tenant_id=? AND m.verified=1', [user.id, tenantId]);
   });
 }
 async function createGuestAccess(tenantId, grupoId, res) {
@@ -44,15 +35,17 @@ async function canAccessReservation(req, reserva) {
   }
   if (cookies(req).cm_session || req.headers.authorization) {
     const user = req.user || await authenticate(req);
-    if (user.perfil === 'Cliente') {
-      const client = await membership(user, reserva.tenant_id, false);
-      if (client && Number(client.id) === Number(reserva.cliente_id)) return true;
-    }
+    if (await ownsReservation(user,reserva)) return true;
   }
   const token = cookies(req).cm_guest || req.headers['x-reservation-token'];
   if (!token) return false;
   if (cookies(req).cm_guest && !['GET','HEAD','OPTIONS'].includes(req.method) && req.headers['x-guest-csrf'] !== hash(token + ':csrf')) return false;
   return Boolean(await db.getAsync('SELECT 1 FROM GuestAccess WHERE token_hash=? AND tenant_id=? AND grupo_id=? AND expires>?', [hash(token), reserva.tenant_id, reserva.grupo_id, Date.now()]));
+}
+async function ownsReservation(user,reserva) {
+  if(user?.perfil!=='Cliente') return false;
+  const client=await membership(user,reserva.tenant_id,false);
+  return Boolean(client && Number(client.id)===Number(reserva.cliente_id));
 }
 async function requireReservationAccess(req, res, next) {
   try {
@@ -63,7 +56,8 @@ async function requireReservationAccess(req, res, next) {
       const reserva = await db.getAsync('SELECT id,tenant_id,cliente_id,grupo_id FROM Reservas WHERE id=?', [id]);
       if (!reserva || !await canAccessReservation(req, reserva)) throw httpError(404, 'Reserva não encontrada.');
     }
+    res.set('Cache-Control','no-store');
     next();
-  } catch (err) { res.status(err.status || 503).json({ error: err.status ? err.message : 'Não foi possível validar o acesso.' }); }
+  } catch (err) { res.status(err.status || 503).json({ error: require('../utils/security').publicError(err, 'Não foi possível validar o acesso.') }); }
 }
-module.exports = { membership, createGuestAccess, canAccessReservation, requireReservationAccess };
+module.exports = { membership, ownsReservation, createGuestAccess, canAccessReservation, requireReservationAccess };

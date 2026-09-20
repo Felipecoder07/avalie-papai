@@ -89,7 +89,7 @@ describe('Actual mounted routes and concurrent SQLite effects', () => {
     const response = await auth(request(app).post('/api/reservas'),session).send({tenant_id:2,cliente_id:1,quadra_id:1,data_reserva:'2099-12-20',hora_inicio:'10:00',hora_fim:'11:00'});
     expect(response.status).toBe(201);
     expect(response.body.reserva_id).toBeTypeOf('number');
-    expect(await db.getAsync('SELECT tenant_id,cliente_id,valor_total FROM Reservas WHERE id=?',[response.body.reserva_id])).toEqual({tenant_id:1,cliente_id:1,valor_total:100});
+    expect(await db.getAsync('SELECT tenant_id,cliente_id,valor_total FROM Reservas WHERE id=?',[response.body.reserva_id])).toEqual({tenant_id:1,cliente_id:1,valor_total:10000});
   });
 
   it('simultaneous bookings produce one row, one price and exactly one conflict', async () => {
@@ -97,7 +97,7 @@ describe('Actual mounted routes and concurrent SQLite effects', () => {
     const body = {cliente_id:1,quadra_id:1,data_reserva:'2099-12-20',hora_inicio:'10:00',hora_fim:'11:00'};
     const responses = await Promise.all([1,2].map(() => auth(request(app).post('/api/reservas'),session).send(body)));
     expect(responses.map(r => r.status).sort()).toEqual([201,409]);
-    expect(await db.getAsync("SELECT COUNT(*) AS count,SUM(valor_total) AS total FROM Reservas WHERE data_reserva='2099-12-20'")).toEqual({count:1,total:100});
+    expect(await db.getAsync("SELECT COUNT(*) AS count,SUM(valor_total) AS total FROM Reservas WHERE data_reserva='2099-12-20'")).toEqual({count:1,total:10000});
   });
 
   it('logout revokes the exact cookie that previously read protected data', async () => {

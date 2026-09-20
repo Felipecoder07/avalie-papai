@@ -1,19 +1,21 @@
+if (process.env.NODE_ENV !== 'test') throw new Error('Fixture restrita aos testes. Use convite ou recuperação verificada.');
+const logger = require('../utils/safeLogger').forModule('migrate_superadmin2');
 const path = require("node:path");
 const bcrypt = require('bcrypt');
 const db = require('../config/database');
 
 const migrate = async () => {
-  console.log('Iniciando migração segura...');
+  logger.log('Iniciando migração segura...');
 
   // 1. Add status to Arenas
   try {
     await db.runAsync("ALTER TABLE Arenas ADD COLUMN status INTEGER DEFAULT 1;");
-    console.log('Coluna status garantida em Arenas.');
+    logger.log('Coluna status garantida em Arenas.');
   } catch (e) {
     if (!e.message.includes('duplicate column')) {
-      console.log('Aviso ao alterar Arenas:', e.message);
+      logger.log('Aviso ao alterar Arenas:', e.message);
     } else {
-      console.log('Coluna status já existe em Arenas.');
+      logger.log('Coluna status já existe em Arenas.');
     }
   }
 
@@ -44,10 +46,10 @@ const migrate = async () => {
     await db.runAsync("COMMIT;");
     await db.runAsync("PRAGMA foreign_keys=on;");
 
-    console.log('Tabela Usuarios recriada com sucesso.');
+    logger.log('Tabela Usuarios recriada com sucesso.');
   } catch (err) {
     await db.runAsync("ROLLBACK;");
-    console.error('Erro na recriação da tabela Usuarios:', err.message);
+    logger.error('Erro na recriação da tabela Usuarios:', err.message);
     return;
   }
 
@@ -58,17 +60,17 @@ const migrate = async () => {
       `INSERT INTO Usuarios (nome, email, senha_hash, perfil) VALUES (?, ?, ?, ?)`,
       ['Super Administrador', 'master@courtmanager.com', senha_hash, 'SuperAdmin']
     );
-    console.log('SuperAdmin master@courtmanager.com (senha: admin123) criado.');
+    logger.log('SuperAdmin master@courtmanager.com (senha: admin123) criado.');
   } catch (err) {
     if (err.message.includes('UNIQUE')) {
-      console.log('SuperAdmin já existe.');
+      logger.log('SuperAdmin já existe.');
     } else {
-      console.error('Erro ao criar SuperAdmin:', err.message);
+      logger.error('Erro ao criar SuperAdmin:', err.message);
     }
   }
 };
 
 migrate().then(() => {
-  console.log('Migração finalizada.');
+  logger.log('Migração finalizada.');
   process.exit(0);
 });

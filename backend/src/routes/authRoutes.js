@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('authRoutes');
 const express = require('express');
 const router = express.Router();
 const { login, logout, register, forgotPassword, resetPassword } = require('../controllers/authController');
@@ -7,6 +8,7 @@ const db = require('../config/database');
 
 router.post('/login', loginLimiter, login);
 router.post('/register', recoveryLimiter, register);
+router.post('/alterar-senha', verifyToken, recoveryLimiter, require('../controllers/passwordController').changeOwnPassword);
 router.post('/logout', verifyToken, logout);
 router.post('/forgot-password', recoveryLimiter, forgotPassword);
 router.post('/reset-password', recoveryLimiter, resetPassword);
@@ -31,7 +33,7 @@ router.get('/manutencao', async (req, res) => {
       mensagem: msg ? msg.valor : 'Estamos em manutenção programada. Voltamos em instantes.'
     });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao buscar estado de manutenção.' });
   }
 });
@@ -40,7 +42,7 @@ router.get('/manutencao', async (req, res) => {
 router.get('/me', verifyToken, async (req, res) => {
   try {
     const user = await db.getAsync(`
-      SELECT u.id, u.nome, u.email, u.perfil, u.tenant_id, u.cliente_id, a.nome as arena_nome, a.slug as arena_slug
+      SELECT u.id, u.nome, u.email, u.perfil, u.tenant_id, a.nome as arena_nome, a.slug as arena_slug
       FROM Usuarios u
       LEFT JOIN Arenas a ON u.tenant_id = a.id
       WHERE u.id = ?
@@ -58,19 +60,18 @@ router.get('/me', verifyToken, async (req, res) => {
         email: user.email,
         perfil: user.perfil,
         tenant_id: user.tenant_id,
-        cliente_id: user.cliente_id,
         arena_nome: user.arena_nome,
         arena_slug: user.arena_slug
       }
     });
   } catch (err) {
-    console.error('Erro no endpoint /me:', err);
+    logger.error('Erro no endpoint /me:', err);
     res.status(500).json({ error: 'Erro interno ao validar sessão.' });
   }
 });
 
 // Rota para obter comunicados ativos da arena logada
-router.get('/comunicados/ativos', verifyToken, async (req, res) => {
+router.get('/comunicados/ativos', verifyToken, require('../utils/permissions').requirePermission('staff.read'), async (req, res) => {
   const tenantId = req.user.tenant_id;
   try {
     const query = `
@@ -84,7 +85,7 @@ router.get('/comunicados/ativos', verifyToken, async (req, res) => {
     const rows = await db.allAsync(query, [String(tenantId || '')]);
     res.json(rows);
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).json({ error: 'Erro ao buscar comunicados ativos.' });
   }
 });

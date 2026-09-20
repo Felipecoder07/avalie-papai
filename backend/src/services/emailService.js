@@ -1,3 +1,4 @@
+const logger = require('../utils/safeLogger').forModule('emailService');
 const nodemailer = require('nodemailer');
 
 const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
@@ -23,7 +24,7 @@ const transporter = nodemailer.createTransport({
  */
 const sendEmail = async (to, subject, htmlContent) => {
   if (!user || !pass) {
-    console.warn('[SMTP] Credenciais de e-mail não configuradas no .env. Ignorando envio.');
+    logger.warn('[SMTP] Credenciais de e-mail não configuradas no .env. Ignorando envio.');
     return false;
   }
 
@@ -35,12 +36,12 @@ const sendEmail = async (to, subject, htmlContent) => {
       html: htmlContent,
     });
     const safeTo = String(to || '').replace(/[\r\n]/g, '');
-    console.log(`[SMTP] E-mail enviado com sucesso para ${safeTo}. MessageId: ${info.messageId}`);
+    logger.log(`[SMTP] E-mail enviado com sucesso para ${safeTo}. MessageId: ${info.messageId}`);
     return true;
   } catch (error) {
     const safeTo = String(to || '').replace(/[\r\n]/g, '');
     const safeErrMsg = String(error?.message || '').replace(/[\r\n]/g, '');
-    console.error(`[SMTP] Erro ao enviar e-mail para ${safeTo}:`, safeErrMsg);
+    logger.error(`[SMTP] Erro ao enviar e-mail para ${safeTo}:`, safeErrMsg);
     return false;
   }
 };

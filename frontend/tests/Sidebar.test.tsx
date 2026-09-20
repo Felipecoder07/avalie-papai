@@ -70,6 +70,7 @@ describe('master navigation', () => {
 
   it.each([true, false])('clears the session and returns to login after logout (network success: %s)', async (success) => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
     safeStorage.setItem('courtmanager_token', 'abc.def');
     safeStorage.setItem('courtmanager_user', JSON.stringify({ perfil: 'SuperAdmin' }));
     const fetchMock = success ? vi.fn().mockResolvedValue({ ok: true }) : vi.fn().mockRejectedValue(new Error('Offline'));
@@ -84,8 +85,15 @@ describe('master navigation', () => {
       </MemoryRouter>
     );
     await user.click(screen.getByRole('button', { name: 'Sair' }));
+    if (!success) {
+      await waitFor(() => expect(alert).toHaveBeenCalled());
+      expect(safeStorage.getItem('courtmanager_user')).not.toBeNull();
+      expect(screen.queryByText('Login Master')).not.toBeInTheDocument();
+      return;
+    }
     expect(await screen.findByText('Login Master')).toBeInTheDocument();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer abc.def' } }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: expect.any(Headers) }));
+    expect(fetchMock.mock.calls[0][1].headers.has('authorization')).toBe(false);
     expect(safeStorage.getItem('courtmanager_token')).toBeNull();
     expect(safeStorage.getItem('courtmanager_user')).toBeNull();
   });

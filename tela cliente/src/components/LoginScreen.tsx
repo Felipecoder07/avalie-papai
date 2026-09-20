@@ -11,8 +11,9 @@ const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || ''
 interface Props {
   arena: ArenaInfo;
   slug: string;
-  onAuthed: (user: { name: string; email: string; phone: string; token?: string }) => void;
+  onAuthed: (user: { name: string; email: string; phone: string;  }) => void;
   onClose?: () => void;
+  onGuestCheckout?: () => void;
 }
 
 declare global {
@@ -22,7 +23,7 @@ declare global {
  } } } }
 }
 
-export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly<Props>) {
+export default function LoginScreen({ arena, slug, onAuthed, onClose, onGuestCheckout }: Readonly<Props>) {
   useEffect(() => {
     document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
@@ -53,8 +54,7 @@ export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly
         const res=await fetch(BACKEND_URL+'/api/public/tenant/'+slug+'/google',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential,senha:password||undefined})});
         const data=await res.json();
         if(!res.ok) {setError(data.error || 'Falha na identidade Google.');return;}
-        localStorage.setItem('atleta_token','session');
-        onAuthed({name:data.usuario.nome,email:data.usuario.email,phone:data.usuario.telefone||'',token:'session'});
+        onAuthed({name:data.usuario.nome,email:data.usuario.email,phone:data.usuario.telefone||''});
       } catch {setError('Falha de conexao.');} finally {setLoading(null);}
     }});
     identity.prompt();
@@ -124,12 +124,10 @@ export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly
       });
       const data = await res.json();
       if (res.ok && data.usuario) {
-        if (data.token) localStorage.setItem('atleta_token', data.token);
         onAuthed({
           name: data.usuario.nome,
           email: data.usuario.email,
-          phone: data.usuario.telefone || phone,
-          token: data.token
+          phone: data.usuario.telefone || phone
         });
       } else {
         setError(data.error || 'Erro ao realizar operação. Tente novamente.');
@@ -291,10 +289,10 @@ export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly
                 <input
                   type={showPwd ? 'text' : 'password'}
                   required
-                  minLength={6}
+                  minLength={8}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Sua Senha (mín. 6 caracteres)"
+                  placeholder="Sua Senha (mín. 8 caracteres)"
                   className="flex-1 bg-transparent outline-none text-sm text-charcoal placeholder:text-muted/60"
                 />
                 <button
@@ -314,10 +312,10 @@ export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly
                 <input
                   type={showPwd ? 'text' : 'password'}
                   required
-                  minLength={6}
+                  minLength={8}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Nova Senha (mín. 6 caracteres)"
+                  placeholder="Nova Senha (mín. 8 caracteres)"
                   className="flex-1 bg-transparent outline-none text-sm text-charcoal placeholder:text-muted/60"
                 />
                 <button
@@ -374,6 +372,7 @@ export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly
 
           <div className="mt-4 text-center text-xs text-muted">
             {mode === 'signin' && (
+              <>
               <p>
                 Novo por aqui?{' '}
                 <button
@@ -387,6 +386,18 @@ export default function LoginScreen({ arena, slug, onAuthed, onClose }: Readonly
                   Criar conta grátis
                 </button>
               </p>
+              {onGuestCheckout && (
+                <div className="mt-3 border-t border-edge pt-3">
+                  <p className="text-[11px] text-muted mb-1.5">Apenas quer fazer uma reserva rápida?</p>
+                  <button
+                    onClick={onGuestCheckout}
+                    className="font-semibold text-charcoal underline-offset-2 active:underline px-4 py-2 bg-charcoal/5 rounded-xl transition hover:bg-charcoal/10"
+                  >
+                    Continuar como visitante
+                  </button>
+                </div>
+              )}
+              </>
             )}
 
             {mode === 'signup' && (

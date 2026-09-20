@@ -62,7 +62,6 @@ const EVENT_CATEGORIES = [
 ];
 
 export function AdminAuditoria() {
-  const [token] = useState<string>(() => localStorage.getItem('courtmanager_token') || '');
 
   // Filter States
   const [busca, setBusca] = useState('');
@@ -137,7 +136,6 @@ export function AdminAuditoria() {
   };
 
   const carregarLogs = async (resetPage = false) => {
-    if (!token) return;
     setLoading(true);
     const targetPage = resetPage ? 1 : currentPage;
     if (resetPage) {
@@ -153,12 +151,11 @@ export function AdminAuditoria() {
       if (evento) url.searchParams.append('evento', evento);
 
       const res = await fetch(url.toString(), {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
 
       if (!res.ok) {
         if (res.status === 401) {
-          localStorage.removeItem('courtmanager_token');
           window.location.href = '/login';
           return;
         }
@@ -206,7 +203,6 @@ export function AdminAuditoria() {
   }, [currentPage]);
 
   const handleExportCSV = async () => {
-    if (!token) return;
     setExporting(true);
 
     try {
@@ -218,7 +214,7 @@ export function AdminAuditoria() {
       if (evento) url.searchParams.append('evento', evento);
 
       const res = await fetch(url.toString(), {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (!res.ok) throw new Error('Erro na exportação');
 

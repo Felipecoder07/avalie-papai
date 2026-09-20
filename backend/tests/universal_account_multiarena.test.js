@@ -6,7 +6,7 @@ const initDb = require('../src/config/init_db');
 describe('Testes de Integração de Estresse — Conta Universal Multiarena (Modelo A)', () => {
   const slugArena1 = 'arena-alpha-test';
   const slugArena2 = 'arena-beta-test';
-  let tokenAthleteGlobal;
+  let sessionGlobal = {};
 
   beforeAll(async () => {
     initDb();
@@ -34,12 +34,12 @@ describe('Testes de Integração de Estresse — Conta Universal Multiarena (Mod
     // 3. Cria Quadra na Arena 1 e na Arena 2
     await db.runAsync(`
       INSERT INTO Quadras (id, tenant_id, nome, tipo, preco_base, status)
-      VALUES (9981, 998, 'Quadra Alpha 1', 'Areia', 100.0, 'Ativa')
+      VALUES (9981, 998, 'Quadra Alpha 1', 'Areia', 10000, 'Ativa')
     `);
 
     await db.runAsync(`
       INSERT INTO Quadras (id, tenant_id, nome, tipo, preco_base, status)
-      VALUES (9991, 999, 'Quadra Beta 1', 'Sintética', 120.0, 'Ativa')
+      VALUES (9991, 999, 'Quadra Beta 1', 'Sintética', 12000, 'Ativa')
     `);
   });
 
@@ -63,9 +63,10 @@ describe('Testes de Integração de Estresse — Conta Universal Multiarena (Mod
       });
 
     expect(res.status).toBe(201);
-    expect(res.body).toHaveProperty('token');
     expect(res.body.usuario.email).toBe('atleta.universal@teste.com');
-    tokenAthleteGlobal = res.body.token;
+
+    const pairs = res.headers['set-cookie'].map(value => value.split(';')[0]);
+    sessionGlobal = { cookie: pairs.join('; '), csrf: pairs.find(v => v.startsWith('cm_csrf=')).split('=')[1] };
   });
 
   it('2. Deve rejeitar tentativa de cadastro na Arena Beta com a senha INCORRETA (HTTP 400)', async () => {
@@ -79,7 +80,7 @@ describe('Testes de Integração de Estresse — Conta Universal Multiarena (Mod
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('já está cadastrado');
+    expect(res.body.error).toContain('Não foi possível cadastrar');
   });
 
   it('3. Deve aceitar cadastro/login silencioso na Arena Beta com a senha CORRETA (HTTP 200)', async () => {
@@ -93,14 +94,14 @@ describe('Testes de Integração de Estresse — Conta Universal Multiarena (Mod
       });
 
     expect(res.status).toBe(200);
-    expect(res.body.message).toContain('Bem-vindo de volta');
-    expect(res.body).toHaveProperty('token');
+    expect(res.body.usuario.email).toBe('atleta.universal@teste.com');
   });
 
   it('4. Deve reutilizar o mesmo Token JWT da Arena Alpha para consultar perfil na Arena Beta', async () => {
     const res = await supertest(app)
       .get(`/api/public/tenant/${slugArena2}/meu-perfil`)
-      .set('Authorization', `Bearer ${tokenAthleteGlobal}`);
+      .set('Cookie', sessionGlobal.cookie)
+      .set('x-csrf-token', sessionGlobal.csrf);
 
     expect(res.status).toBe(200);
     expect(res.body.perfil.email).toBe('atleta.universal@teste.com');
@@ -111,7 +112,8 @@ describe('Testes de Integração de Estresse — Conta Universal Multiarena (Mod
     // 5a. Atleta faz reserva na Arena Alpha
     const resBookingAlpha = await supertest(app)
       .post(`/api/public/tenant/${slugArena1}/agendar`)
-      .set('Authorization', `Bearer ${tokenAthleteGlobal}`)
+      .set('Cookie', sessionGlobal.cookie)
+      .set('x-csrf-token', sessionGlobal.csrf)
       .send({
         nome: 'Atleta Universal',
         telefone: '11988887777',
@@ -125,7 +127,8 @@ describe('Testes de Integração de Estresse — Conta Universal Multiarena (Mod
     // 5b. Consulta "Minhas Reservas" na Arena Alpha -> DEVE conter 1 reserva
     const resReservesAlpha = await supertest(app)
       .get(`/api/public/tenant/${slugArena1}/minhas-reservas`)
-      .set('Authorization', `Bearer ${tokenAthleteGlobal}`);
+      .set('Cookie', sessionGlobal.cookie)
+      .set('x-csrf-token', sessionGlobal.csrf);
 
     expect(resReservesAlpha.status).toBe(200);
     expect(resReservesAlpha.body.length).toBeGreaterThanOrEqual(1);
@@ -133,19 +136,27 @@ describe('Testes de Integração de Estresse — Conta Universal Multiarena (Mod
     // 5c. Consulta "Minhas Reservas" na Arena Beta -> DEVE retornar 0 reservas (Isolamento garantido!)
     const resReservesBeta = await supertest(app)
       .get(`/api/public/tenant/${slugArena2}/minhas-reservas`)
-      .set('Authorization', `Bearer ${tokenAthleteGlobal}`);
+      .set('Cookie', sessionGlobal.cookie)
+      .set('x-csrf-token', sessionGlobal.csrf);
 
     expect(resReservesBeta.status).toBe(200);
     expect(resReservesBeta.body).toHaveLength(0);
   });
 
   it('6. Autenticação Google OAuth deve funcionar entre múltiplas arenas sem duplicar usuários', async () => {
+    // Mock the google-auth-library since the system now strictly verifies credentials
+    const { OAuth2Client } = require('google-auth-library');
+    const originalVerify = OAuth2Client.prototype.verifyIdToken;
+    OAuth2Client.prototype.verifyIdToken = async () => ({
+      getPayload: () => ({ sub: '1234567890', email: 'google.universal@teste.com', email_verified: true, exp: Math.floor(Date.now() / 1000) + 3600, name: 'Google Player' })
+    });
+    process.env.GOOGLE_CLIENT_ID = 'test-client-id';
+
     // Login Google na Arena Alpha
     const resGoogleAlpha = await supertest(app)
       .post(`/api/public/tenant/${slugArena1}/google`)
       .send({
-        email: 'google.universal@teste.com',
-        nome: 'Google Player',
+        credential: 'fake_valid_jwt_for_google',
         telefone: '11977776666'
       });
 
@@ -156,8 +167,7 @@ describe('Testes de Integração de Estresse — Conta Universal Multiarena (Mod
     const resGoogleBeta = await supertest(app)
       .post(`/api/public/tenant/${slugArena2}/google`)
       .send({
-        email: 'google.universal@teste.com',
-        nome: 'Google Player',
+        credential: 'fake_valid_jwt_for_google',
         telefone: '11977776666'
       });
 
@@ -169,5 +179,8 @@ describe('Testes de Integração de Estresse — Conta Universal Multiarena (Mod
       "SELECT id FROM Usuarios WHERE email = 'google.universal@teste.com'"
     );
     expect(usersCount).toHaveLength(1);
+
+    OAuth2Client.prototype.verifyIdToken = originalVerify;
+    delete process.env.GOOGLE_CLIENT_ID;
   });
 });

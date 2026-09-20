@@ -1,9 +1,7 @@
 const crypto=require('node:crypto');
-const {decrypt,production}=require('./security');
+const {production}=require('./security');
 async function validateWebhook(req) {
-  const db=require('../config/database');
-  const row=await db.getAsync("SELECT valor FROM ConfiguracoesSaaS WHERE chave='mp_webhook_secret'");
-  const secret=decrypt(row?.valor)||process.env.MERCADO_PAGO_WEBHOOK_SECRET||process.env.MP_WEBHOOK_SECRET;
+  const secret=await require('../services/credentialService').readCredential('mp_webhook_secret');
   if(!secret) return !production() && process.env.NODE_ENV==='test';
   const parts=Object.fromEntries(String(req.headers['x-signature']||'').split(',').map(p=>p.trim().split('=')));
   const id=String(req.query['data.id']||req.body?.data?.id||req.query.id||req.body?.id||'').toLowerCase();

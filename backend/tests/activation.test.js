@@ -1,80 +1,46 @@
 const request = require('supertest');
-const fs = require('fs');
-const path = require('path');
-const jwt = require('jsonwebtoken');
-
-// Configura o ambiente como teste ANTES de carregar o banco e app
-process.env.NODE_ENV = 'test';
-const JWT_SECRET = process.env.JWT_SECRET || 'secret-jwt-courtmanager-2026';
-
-const db = require('../src/config/database');
-const initDb = require('../src/config/init_db');
+const fixture = require('./helpers/securityFixture.cjs');
+const { db, actors, auth } = fixture;
+vi.spyOn(require('../src/services/emailService'), 'sendEmail').mockResolvedValue(true);
 const app = require('../src/app');
 
-// Gera token de teste SuperAdmin
-const superAdminToken = jwt.sign({
-  id: 1,
-  tenant_id: 1,
-  perfil: 'SuperAdmin'
-}, JWT_SECRET, { expiresIn: '1h' });
+beforeAll(fixture.initialize);
+beforeEach(fixture.seed);
+afterAll(fixture.close);
 
-// Gera token de teste Administrador da Arena (tenant 1)
-const adminToken = jwt.sign({
-  id: 2,
-  tenant_id: 1,
-  perfil: 'Administrador'
-}, JWT_SECRET, { expiresIn: '1h' });
-
-describe('Testes de Integração — Fluxo de Boas-vindas e Ativação Segura', () => {
-
-  beforeAll(async () => {
-    // Inicializa o banco de dados de testes
-    initDb();
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Limpa as tabelas para garantir isolamento contra poluição de dados
-    await db.runAsync("DELETE FROM Usuarios");
-    await db.runAsync("DELETE FROM Arenas");
-
-    // Garante estrutura básica de teste
-    await db.runAsync("INSERT OR IGNORE INTO Arenas (id, nome, status) VALUES (1, 'Arena Semente', 1)");
-    await db.runAsync(`
-      INSERT OR IGNORE INTO Usuarios (id, tenant_id, nome, email, senha_hash, perfil) 
-      VALUES (2, 1, 'Admin Arena', 'admin@arena.com', 'hash', 'Administrador')
-    `);
-  });
+describe('Integration Tests — Welcome Flow and Secure Activation', () => {
 
   it('SaaS Master: Deve criar uma nova arena e gerar o token de ativação (boas-vindas)', async () => {
-    const res = await request(app)
-      .post('/api/saas/arenas')
-      .set('Authorization', `Bearer ${superAdminToken}`)
+    const session = await fixture.login(app, actors.master);
+    
+    const res = await auth(request(app).post('/api/saas/arenas'), session)
       .send({
         nome: 'Arena Teste Ativacao',
         email: 'contato@arenateste.com',
-        senha: 'senhaProvisoria123'
+        senha: 'senhaProvisoria123' // Is ignored by controller, random used instead
       });
 
     expect(res.statusCode).toBe(201);
     expect(res.body).toHaveProperty('message', 'Arena cadastrada com sucesso.');
 
-    // Verifica no banco se o token de ativação foi inserido para o novo administrador
-    const user = await db.getAsync(`
-      SELECT reset_password_token, reset_password_expires, senha_hash 
-      FROM Usuarios 
-      WHERE email = 'contato@arenateste.com'
-    `);
+    // Verifica no banco se o challenge de activation foi inserido para o novo administrador
+    const user = await db.getAsync('SELECT id, activation_pending FROM Usuarios WHERE email = ?', ['contato@arenateste.com']);
     expect(user).toBeDefined();
-    expect(user.senha_hash).toBeDefined();
+    expect(user.activation_pending).toBe(1);
+
+    const challenge = await db.getAsync('SELECT * FROM RecoveryChallenges WHERE usuario_id=? AND purpose=? AND used=0', [user.id, 'activation']);
+    expect(challenge).not.toBeNull();
+    expect(challenge.token_hash).toBeDefined();
   });
 
   it('Arena Admin: Deve criar um novo funcionário e gerar o token de ativação', async () => {
-    const res = await request(app)
-      .post('/api/usuarios')
-      .set('Authorization', `Bearer ${adminToken}`)
+    const session = await fixture.login(app, actors.admin);
+
+    const res = await auth(request(app).post('/api/usuarios'), session)
       .send({
         nome: 'Operador Novo',
         email: 'novo_operador@arena.com',
-        senha: 'senhaDigitadaNoForm123',
+        senha: 'senhaDigitadaNoForm123', // ignored
         perfil: 'Recepcionista'
       });
 
@@ -82,13 +48,32 @@ describe('Testes de Integração — Fluxo de Boas-vindas e Ativação Segura', 
     expect(res.body).toHaveProperty('message', 'Usuário criado com sucesso e e-mail de ativação enviado.');
 
     // Verifica no banco se o token de ativação foi inserido para o funcionário
-    const user = await db.getAsync(`
-      SELECT reset_password_token, reset_password_expires, senha_hash 
-      FROM Usuarios 
-      WHERE email = 'novo_operador@arena.com'
-    `);
+    const user = await db.getAsync('SELECT id, activation_pending FROM Usuarios WHERE email = ?', ['novo_operador@arena.com']);
     expect(user).toBeDefined();
-    expect(user.reset_password_token).not.toBeNull();
-    expect(user.reset_password_expires).not.toBeNull();
+    expect(user.activation_pending).toBe(1);
+
+    const challenge = await db.getAsync('SELECT * FROM RecoveryChallenges WHERE usuario_id=? AND purpose=? AND used=0', [user.id, 'activation']);
+    expect(challenge).not.toBeNull();
+    expect(challenge.token_hash).toBeDefined();
+  });
+
+  it('Deve ativar a conta com sucesso consumindo o token', async () => {
+    // Generate activation challenge for a new user
+    await db.runAsync("INSERT INTO Usuarios (tenant_id, nome, email, senha_hash, perfil, ativo, activation_pending) VALUES (1, 'Pending', 'pending@arena.com', '...', 'Cliente', 1, 1)");
+    const user = await db.getAsync("SELECT id FROM Usuarios WHERE email='pending@arena.com'");
+    
+    const { createChallenge } = require('../src/services/recoveryService');
+    const token = await createChallenge(user.id, 'activation');
+
+    const res = await request(app).post('/api/auth/reset-password').send({ token, novaSenha: 'NovaSenha#123', purpose: 'activation' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toHaveProperty('message', 'Senha redefinida. Faca login novamente.');
+
+    // Verify user is activated
+    const activatedUser = await db.getAsync('SELECT activation_pending FROM Usuarios WHERE id=?', [user.id]);
+    expect(activatedUser.activation_pending).toBe(0);
+
+    const challengeAfter = await db.getAsync('SELECT used FROM RecoveryChallenges WHERE usuario_id=? AND purpose=?', [user.id, 'activation']);
+    expect(challengeAfter.used).toBe(1);
   });
 });

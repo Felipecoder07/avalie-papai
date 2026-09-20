@@ -26,8 +26,7 @@ export function MasterUsuarios() {
 
   const fetchUsuarios = async () => {
     try {
-      const token = localStorage.getItem('courtmanager_token');
-      const headers = { 'Authorization': `Bearer ${token}` };
+      const headers = {};
       
       const [usersRes, arenasRes] = await Promise.all([
         fetch('/api/saas/usuarios', { headers }).then(r => r.json()),
@@ -63,9 +62,8 @@ export function MasterUsuarios() {
     setLoadingAccess(true);
     setAccessLogs([]);
     try {
-      const token = localStorage.getItem('courtmanager_token');
       const res = await fetch(`/api/saas/usuarios/${u.id}/acessos`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       const data = await res.json();
       setAccessLogs(data);
@@ -79,10 +77,9 @@ export function MasterUsuarios() {
   const handleToggleStatus = async () => {
     if (!deactivateUser) return;
     try {
-      const token = localStorage.getItem('courtmanager_token');
       const res = await fetch(`/api/saas/usuarios/${deactivateUser.id}/status`, {
         method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         fetchUsuarios();
@@ -97,10 +94,9 @@ export function MasterUsuarios() {
   const handleResetPassword = async () => {
     if (!resetUser) return;
     try {
-      const token = localStorage.getItem('courtmanager_token');
       const res = await fetch(`/api/saas/usuarios/${resetUser.id}/reset-senha`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
       if (res.ok) {
         alert(`Senha de ${resetUser.name} redefinida para "arena123" com sucesso!`);

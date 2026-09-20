@@ -1,3 +1,4 @@
+import { ReauthenticationAction } from '../../components/ReauthenticationAction';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -109,11 +110,15 @@ const parseCurrencyToFloat = (value: string) => {
 };
 
 export function AdminConfiguracoes() {
+  const [currentUser, setCurrentUser] = useState<{ id: number; perfil: string } | null>(null);
+  const [newOwner, setNewOwner] = useState('');
+  useEffect(() => { fetch('/api/auth/me').then(res => res.ok ? res.json() : null).then(data => setCurrentUser(data?.usuario || null)).catch(() => setCurrentUser(null)); }, []);
+  const canManageUser = (user: Usuario) => Boolean(currentUser && ['Administrador', 'Gerente'].includes(currentUser.perfil) && user.id !== currentUser.id && (user.perfil === 'Recepcionista' || (currentUser.perfil === 'Administrador' && user.perfil === 'Gerente')));
+
   const [relAtivo, setRelAtivo] = useState<string>(() => {
     return sessionStorage.getItem('cm_config_tab') || 'quadras';
   });
 
-  const [token] = useState<string>(() => localStorage.getItem('courtmanager_token') || '');
 
   // Lists state
   const [quadras, setQuadras] = useState<Quadra[]>([]);
@@ -217,7 +222,6 @@ export function AdminConfiguracoes() {
   const [nuNome, setNuNome] = useState('');
   const [nuEmail, setNuEmail] = useState('');
   const [nuPerfil, setNuPerfil] = useState('');
-  const [nuSenha, setNuSenha] = useState('');
 
   // Forms state: Motivo
   const [nmNome, setNmNome] = useState('');
@@ -238,7 +242,6 @@ export function AdminConfiguracoes() {
   // --- Fetch API helper ---
   const request = async (url: string, options: RequestInit = {}) => {
     const headers = {
-      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
       ...(options.headers || {})
     };
@@ -247,12 +250,11 @@ export function AdminConfiguracoes() {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       if (res.status === 401) {
-        localStorage.removeItem('courtmanager_token');
         window.location.href = '/login';
         return;
       }
       if (res.status === 403) {
-        throw new Error('Acesso negado para este perfil.');
+        throw new Error(err.error || 'Acesso negado para este perfil.');
       }
       throw new Error(err.error || 'Erro na requisição');
     }
@@ -357,7 +359,7 @@ export function AdminConfiguracoes() {
       }
     };
 
-    if (token) {
+    {
       loadQuadras();
       loadUsuarios();
       loadArena();
@@ -375,7 +377,7 @@ export function AdminConfiguracoes() {
       handleTabChange('pagamentos');
       fetch('/api/pagamentos/gateway/oauth/exchange', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json',},
         body: JSON.stringify({ code, state })
       })
         .then(async res => {
@@ -398,7 +400,7 @@ export function AdminConfiguracoes() {
       handleTabChange('pagamentos');
       showToast('✓ Conta do Mercado Pago conectada com sucesso!', 'success');
     }
-  }, [token]);
+  }, []);
 
   // --- SAVE QUADRA ---
   const handleSaveQuadra = async (e: React.FormEvent) => {
@@ -514,14 +516,11 @@ export function AdminConfiguracoes() {
       showToast('Por favor, informe o nome completo (nome e sobrenome).', 'warning');
       return;
     }
-    if (!nuId && !nuSenha) {
-      showToast('A senha é obrigatória para novos usuários.', 'warning');
-      return;
-    }
+
 
     try {
       const payload: any = { nome: nuNome, email: nuEmail, perfil: nuPerfil };
-      if (nuSenha) payload.senha = nuSenha;
+
 
       if (nuId) {
         // Edit
@@ -576,7 +575,6 @@ export function AdminConfiguracoes() {
     setNuNome(u.nome);
     setNuEmail(u.email);
     setNuPerfil(u.perfil);
-    setNuSenha('');
     setActiveModal('usuario');
   };
 
@@ -585,7 +583,6 @@ export function AdminConfiguracoes() {
     setNuNome('');
     setNuEmail('');
     setNuPerfil('');
-    setNuSenha('');
     setActiveModal('usuario');
   };
 
@@ -829,6 +826,22 @@ export function AdminConfiguracoes() {
                 )}
               </div>
               <button className="btn-primary" onClick={openNovoUsuarioModal}>+ Novo Usuário</button>
+              {currentUser?.perfil === 'Administrador' && <details>
+                <summary>Transferir administração</summary>
+                <p>O integrante escolhido se tornará Administrador. Sua conta passará a Gerente e ambas precisarão entrar novamente.</p>
+                <label>Novo administrador
+                  <select value={newOwner} onChange={e => setNewOwner(e.target.value)}>
+                    <option value="">Selecione um integrante</option>
+                    {usuarios.filter(canManageUser).map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
+                  </select>
+                </label>
+                <ReauthenticationAction label="Confirmar transferência" onConfirm={async proof => {
+                  if (!newOwner) throw new Error('Selecione o novo administrador.');
+                  await request('/api/usuarios/transferir-administracao', { method: 'POST', body: JSON.stringify({ ...proof, usuario_id: Number(newOwner) }) });
+                  window.location.assign('/login');
+                }} />
+              </details>}
+
             </div>
             <div className="table-wrap">
               <table aria-label="Usuários do sistema">
@@ -870,7 +883,7 @@ export function AdminConfiguracoes() {
                           <td>{dataCriacao}</td>
                           <td>Ativo</td>
                           <td>
-                            <button className="btn-ghost btn-sm" onClick={() => openEditarUsuarioModal(u)}>
+                            <button className="btn-ghost btn-sm" disabled={!canManageUser(u)} onClick={() => openEditarUsuarioModal(u)}>
                               Editar
                             </button>
                           </td>
@@ -1064,9 +1077,8 @@ export function AdminConfiguracoes() {
                   }}
                   onClick={async () => {
                     try {
-                      const authToken = localStorage.getItem('courtmanager_token') || token;
                       const res = await fetch('/api/pagamentos/gateway/oauth/url', {
-                        headers: { 'Authorization': `Bearer ${authToken}` }
+                        headers: {}
                       });
                       const data = await res.json();
                       if (!res.ok) throw new Error(data.error || 'Erro ao iniciar conexão automática.');
@@ -1081,42 +1093,16 @@ export function AdminConfiguracoes() {
                   {gatewayConnected ? '🔗 Reautorizar ou Trocar Conta' : '🔗 Conectar com Mercado Pago'}
                 </button>
 
-                {gatewayConnected && (
-                  <button
-                    type="button"
-                    style={{
-                      background: 'rgba(224, 86, 86, 0.1)',
-                      color: 'var(--danger)',
-                      border: '1px solid rgba(224, 86, 86, 0.3)',
-                      padding: '10px 16px',
-                      borderRadius: '6px',
-                      fontWeight: 600,
-                      fontSize: '13px',
-                      cursor: 'pointer'
-                    }}
-                    onClick={async () => {
-                      try {
-                        const authToken = localStorage.getItem('courtmanager_token') || token;
-                        const res = await fetch('/api/pagamentos/gateway/oauth/desconectar', {
-                          method: 'POST',
-                          headers: { 'Authorization': `Bearer ${authToken}` }
-                        });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || 'Erro ao desconectar.');
-                        
-                        setAccessToken('');
-                        setGatewayConnected(false);
-                        setPublicKey('');
-                        showToast('Conta Mercado Pago desconectada com sucesso!', 'success');
-                        loadArena();
-                      } catch (e: any) {
-                        showToast('Erro ao desconectar: ' + e.message, 'error');
-                      }
-                    }}
-                  >
-                    ❌ Desconectar Conta
-                  </button>
-                )}
+                {gatewayConnected && currentUser?.perfil === 'Administrador' && <details>
+                  <summary>Desconectar conta Mercado Pago</summary>
+                  <p>Confirme sua identidade para remover a credencial de pagamentos desta arena.</p>
+                  <ReauthenticationAction label="Confirmar desconexão" onConfirm={async proof => {
+                    await request('/api/pagamentos/gateway/oauth/desconectar', { method: 'POST', body: JSON.stringify(proof) });
+                    setAccessToken(''); setGatewayConnected(false); setPublicKey('');
+                    showToast('Conta Mercado Pago desconectada.', 'success');
+                    loadArena();
+                  }} />
+                </details>}
               </div>
             </div>
 
@@ -2057,28 +2043,11 @@ export function AdminConfiguracoes() {
                   >
                     <option value="">Selecione</option>
                     <option value="Recepcionista">Recepcionista</option>
-                    <option value="Gerente">Gerente</option>
-                    <option value="Administrador">Administrador</option>
+                    {currentUser?.perfil === 'Administrador' && <option value="Gerente">Gerente</option>}
+
                   </select>
                 </div>
-                <div className="form-group">
-                  <label htmlFor="u-senha">
-                    Senha {!nuId && <span style={{ color: 'var(--danger)' }}>*</span>}
-                  </label>
-                  <input 
-                    type="password" 
-                    id="u-senha" 
-                    placeholder="Digite a senha" 
-                    value={nuSenha}
-                    onChange={(e) => setNuSenha(e.target.value)}
-                    required={!nuId}
-                  />
-                  {nuId && (
-                    <small style={{ color: 'var(--muted)', fontSize: '11px', display: 'block' }}>
-                      Deixe em branco para manter a senha atual.
-                    </small>
-                  )}
-                </div>
+                <p>O novo colaborador receberá um convite por e-mail para definir sua senha. Para contas existentes, use a recuperação de acesso.</p>
               </div>
               <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 {nuId ? (

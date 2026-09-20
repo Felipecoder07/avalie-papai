@@ -1,4 +1,4 @@
-import { apiFetch as fetch } from '../../utils/apiFetch';
+import { apiFetch as fetch, logout } from '../../utils/apiFetch';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getStoredUser } from '../../utils/session';
@@ -17,7 +17,6 @@ interface Reserva {
 
 export function PortalCliente() {
   const navigate = useNavigate();
-  const token = safeStorage.getItem('courtmanager_token');
   const user = getStoredUser();
 
   const [reservas, setReservas] = useState<Reserva[]>([]);
@@ -26,7 +25,6 @@ export function PortalCliente() {
 
   // Modal de pagamento online
   const [pagandoReserva, setPagandoReserva] = useState<Reserva | null>(null);
-  const [gatewayRef, setGatewayRef] = useState('');
   const [qrCode, setQrCode] = useState('');
   const [copiaCola, setCopiaCola] = useState('');
   const [loadingGateway, setLoadingGateway] = useState(false);
@@ -38,11 +36,10 @@ export function PortalCliente() {
   };
 
   const fetchDashboard = async () => {
-    if (!token) return;
     setLoading(true);
     try {
       const response = await fetch('/api/reservas/minhas', {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: {}
       });
 
       if (!response.ok) throw new Error('Falha ao obter reservas.');
@@ -56,12 +53,12 @@ export function PortalCliente() {
   };
 
   useEffect(() => {
-    if (!token || !user) {
+    if (!user) {
       navigate('/login');
       return;
     }
     fetchDashboard();
-  }, [token]);
+  }, []);
 
   // Polling para verificar se o pagamento foi confirmado
   useEffect(() => {
@@ -71,14 +68,13 @@ export function PortalCliente() {
     const checkStatus = async () => {
       try {
         const res = await fetch(`/api/pagamentos/gateway/status/${pagandoReserva.id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: {}
         });
         if (res.ok) {
           const data = await res.json();
           if (data.status_pagamento === 'Pago') {
             showToast('Pagamento confirmado com sucesso!', 'success');
             setPagandoReserva(null);
-            setGatewayRef('');
             setQrCode('');
             setCopiaCola('');
             fetchDashboard();
@@ -93,8 +89,8 @@ export function PortalCliente() {
     return () => clearInterval(intervalId);
   }, [pagandoReserva]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('courtmanager_token');
+  const handleLogout = async () => {
+    try { await logout(); } catch { window.alert('Não foi possível encerrar a sessão. Tente novamente.'); return; }
     localStorage.removeItem('courtmanager_user');
     navigate('/login');
   };
@@ -107,9 +103,7 @@ export function PortalCliente() {
       const res = await fetch('/api/pagamentos/gateway/cobranca', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+          'Content-Type': 'application/json',},
         body: JSON.stringify({
           reserva_id: reserva.id,
           metodo: 'Pix'
@@ -118,7 +112,6 @@ export function PortalCliente() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao criar cobrança.');
 
-      setGatewayRef(data.gateway_ref);
       setQrCode(data.qr_code);
       setCopiaCola(data.copia_cola);
     } catch (err: any) {
@@ -126,27 +119,6 @@ export function PortalCliente() {
       setPagandoReserva(null);
     } finally {
       setLoadingGateway(false);
-    }
-  };
-
-  // Simular pagamento (Helper de dev)
-  const simularPagamento = async () => {
-    if (!gatewayRef) return;
-    try {
-      const res = await fetch('/api/pagamentos/gateway/simular-pagamento', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ gateway_ref: gatewayRef })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao simular.');
-
-      showToast('Pagamento simulado enviado ao servidor!', 'success');
-    } catch (err: any) {
-      showToast(err.message, 'error');
     }
   };
 
@@ -371,18 +343,7 @@ export function PortalCliente() {
                         </div>
                       </div>
 
-                      {/* Simulador Dev */}
-                      <div className="w-full border-t border-charcoal/10 pt-4 flex flex-col gap-2">
-                        <button
-                          onClick={simularPagamento}
-                          className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 px-4 rounded-lg text-sm shadow-md transition-colors"
-                        >
-                          ⚡ Simular Confirmação do Pix
-                        </button>
-                        <span className="text-[10px] text-charcoal/50 text-center">
-                          Clique para simular o recebimento do PIX sem precisar de app real.
-                        </span>
-                      </div>
+
                     </div>
                   )}
                 </div>
