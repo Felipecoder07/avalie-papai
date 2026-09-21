@@ -1,6 +1,6 @@
 import { Menu, Search, Bell, ChevronRight } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
-import { NAV_ITEMS } from './Sidebar';
+import { MASTER_NAV_ITEMS as NAV_ITEMS } from './navigation';
 
 interface TopbarProps {
   onToggleSidebar: () => void;

@@ -1,0 +1,56 @@
+# TEMPLATE ONLY. Render ARENIX_DOMAIN after DNS/certificates are configured.
+# Copy ONLY frontend/dist and tela cliente/dist into /srv/arenix/www.
+server {
+    listen 80;
+    server_name ${ARENIX_DOMAIN};
+    location /.well-known/acme-challenge/ { root /srv/arenix/acme; }
+    location / { return 308 https://${ARENIX_DOMAIN}$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${ARENIX_DOMAIN};
+    ssl_certificate /etc/letsencrypt/live/${ARENIX_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${ARENIX_DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_tokens off;
+    root /srv/arenix/www;
+    client_max_body_size 7m;
+    if ($host != ${ARENIX_DOMAIN}) { return 444; }
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Cache-Control "no-store" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://accounts.google.com https://sdk.mercadopago.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://accounts.google.com https://api.mercadopago.com; frame-src https://accounts.google.com https://www.mercadopago.com.br; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" always;
+    # Enable only after validating HTTPS. Do not add preload/includeSubDomains
+    # without checking all affected domains.
+    # add_header Strict-Transport-Security "max-age=31536000" always;
+
+    location ~ /\. { return 404; }
+    location ~* \.(env|sqlite3?|db|sql|bak|backup|map)(-(wal|shm))?$ { return 404; }
+    location ~* ^/(data|backups|backend|node_modules)(/|$) { return 404; }
+    location ~* /package(-lock)?\.json$ { return 404; }
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Overwrite, never append untrusted incoming forwarded headers.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+    }
+    location /uploads/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+    location /arena/ { try_files $uri /athlete/index.html; }
+    location /athlete/ { try_files $uri =404; }
+    location /assets/ { try_files $uri =404; }
+    location / { try_files $uri /index.html; }
+}

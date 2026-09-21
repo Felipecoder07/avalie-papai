@@ -1,3 +1,6 @@
+import { useEventCallback } from '../../hooks/useEventCallback';
+import { useCallback } from 'react';
+import { errorMessage } from '../../utils/errorMessage';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import React, { useState, useEffect } from 'react';
 import '../../assets/css/pagamentos.css';
@@ -191,7 +194,7 @@ export function AdminPagamentos() {
   };
 
   // Carregar KPIs
-  const carregarKPIs = async (overrideData?: string) => {
+  const carregarKPIs = useCallback(async (overrideData?: string) => {
     const dt = overrideData !== undefined ? overrideData : dataFiltro;
     try {
       const url = dt ? `/api/pagamentos/resumo?data=${encodeURIComponent(dt)}` : '/api/pagamentos/resumo';
@@ -205,10 +208,10 @@ export function AdminPagamentos() {
     } catch (err) {
       console.warn('Erro ao carregar KPIs de pagamento:', err);
     }
-  };
+  }, [dataFiltro] );
 
   // Carregar reservas de faturamento
-  const carregarReservas = async () => {
+  const carregarReservas = useEventCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -237,15 +240,15 @@ export function AdminPagamentos() {
     } finally {
       setLoading(false);
     }
-  };
+  } );
 
   useEffect(() => {
     carregarKPIs(dataFiltro);
-  }, [tabAtiva, dataFiltro]);
+  }, [tabAtiva, dataFiltro, carregarKPIs]);
 
   useEffect(() => {
     carregarReservas();
-  }, [tabAtiva, dataFiltro]);
+  }, [tabAtiva, dataFiltro, carregarReservas]);
 
   // Debounce para busca textual
   useEffect(() => {
@@ -253,7 +256,7 @@ export function AdminPagamentos() {
       carregarReservas();
     }, 350);
     return () => clearTimeout(timer);
-  }, [busca]);
+  }, [busca, carregarReservas]);
 
   // Buscar histórico de pagamentos individuais ao abrir modal de pagamento ou estorno
   const carregarHistoricoPagamentos = async (reservaId: number) => {
@@ -287,7 +290,7 @@ export function AdminPagamentos() {
   useEffect(() => {
     if (!showPixCobranca || !reservaAtual) return;
 
-    let intervalId: any;
+
     const checkStatus = async () => {
       try {
         const res = await fetch(`/api/pagamentos/gateway/status/${reservaAtual.id}`, {
@@ -316,14 +319,14 @@ export function AdminPagamentos() {
       }
     };
 
-    intervalId = setInterval(checkStatus, 3000);
+    const intervalId = setInterval(checkStatus, 3000);
     return () => clearInterval(intervalId);
-  }, [showPixCobranca, reservaAtual]);
+  }, [showPixCobranca, reservaAtual, carregarKPIs, carregarReservas]);
 
   const handleSimularPagamentoPix = async () => {
     if (!gatewayRef) return;
     try {
-      const payload: any = { gateway_ref: gatewayRef };
+      const payload: { gateway_ref: string; device_id?: string; valor_pago?: number } = { gateway_ref: gatewayRef };
       if (rpMetodo === 'Cartão (Maquineta Online)') {
         payload.device_id = posDeviceId;
         payload.valor_pago = parseCurrencyToFloat(rpValor);
@@ -339,8 +342,8 @@ export function AdminPagamentos() {
       if (!res.ok) throw new Error(data.error || 'Erro ao simular.');
       
       showToast('Pagamento simulação concluída!', 'success');
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
@@ -408,8 +411,8 @@ export function AdminPagamentos() {
         } else {
           setPosDeviceId(data.device_id);
         }
-      } catch (err: any) {
-        showToast(err.message, 'error');
+      } catch (err) {
+        showToast(errorMessage(err), 'error');
         setShowPixCobranca(false);
       } finally {
         setLoadingGateway(false);
@@ -437,8 +440,8 @@ export function AdminPagamentos() {
       setReservaAtual(null);
       carregarKPIs();
       carregarReservas();
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
@@ -471,8 +474,8 @@ export function AdminPagamentos() {
       setEstpValor('');
       carregarKPIs();
       carregarReservas();
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 

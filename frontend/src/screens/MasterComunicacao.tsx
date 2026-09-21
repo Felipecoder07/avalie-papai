@@ -1,3 +1,5 @@
+import { useCallback } from 'react';
+import type { SaaSArena, Announcement } from '../types/api';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Send, Megaphone, Trash2, Calendar } from 'lucide-react';
@@ -5,8 +7,8 @@ import { Card, Badge, Button, PageHeader, Field, Input, Select, Textarea, Confir
 import { formatDate } from '../data/mock';
 
 export function MasterComunicacao() {
-  const [arenas, setArenas] = useState<any[]>([]);
-  const [banners, setBanners] = useState<any[]>([]);
+  const [arenas, setArenas] = useState<SaaSArena[]>([]);
+  const [banners, setBanners] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Notificação individual
@@ -25,9 +27,9 @@ export function MasterComunicacao() {
   const [broadcastErrorMsg, setBroadcastErrorMsg] = useState('');
 
   // Remoção
-  const [removeBanner, setRemoveBanner] = useState<string | null>(null);
+  const [removeBanner, setRemoveBanner] = useState<number | null>(null);
 
-  const fetchDados = async () => {
+  const fetchDados = useCallback(async () => {
     try {
       const headers = {};
 
@@ -39,19 +41,19 @@ export function MasterComunicacao() {
       setArenas(Array.isArray(arenasRes) ? arenasRes : []);
       setBanners(Array.isArray(BannersRes) ? BannersRes : []);
 
-      if (Array.isArray(arenasRes) && arenasRes.length > 0 && !targetArena) {
-        setTargetArena(String(arenasRes[0].id));
+      if (Array.isArray(arenasRes) && arenasRes.length > 0) {
+        setTargetArena(current => current || String(arenasRes[0].id));
       }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  };
+  }, [] );
 
   useEffect(() => {
     fetchDados();
-  }, []);
+  }, [fetchDados]);
 
   const handleSendIndividual = async () => {
     if (!message.trim() || !targetArena) return;
@@ -171,18 +173,18 @@ export function MasterComunicacao() {
             )}
 
             <Field label="Arena de destino">
-              <Select value={targetArena} onChange={(e: any) => { setTargetArena(e.target.value); setErrorMsg(''); }}>
+              <Select value={targetArena} onChange={(e) => { setTargetArena(e.target.value); setErrorMsg(''); }}>
                 {arenas.map((a) => <option key={a.id} value={String(a.id)}>{a.nome}</option>)}
               </Select>
             </Field>
             <Field label="Canal">
-              <Select value={channel} onChange={(e: any) => { setChannel(e.target.value as any); setErrorMsg(''); }}>
+              <Select value={channel} onChange={(e) => { setChannel(e.target.value === 'email' ? 'email' : 'alerta'); setErrorMsg(''); }}>
                 <option value="alerta">Alerta interno no sistema</option>
                 <option value="email">E-mail</option>
               </Select>
             </Field>
             <Field label="Mensagem">
-              <Textarea rows={4} value={message} onChange={(e: any) => { setMessage(e.target.value); setErrorMsg(''); }} placeholder="Digite a mensagem que a arena verá..." />
+              <Textarea rows={4} value={message} onChange={(e) => { setMessage(e.target.value); setErrorMsg(''); }} placeholder="Digite a mensagem que a arena verá..." />
             </Field>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => { setMessage(''); setErrorMsg(''); }}>Limpar</Button>
@@ -215,24 +217,24 @@ export function MasterComunicacao() {
             )}
 
             <Field label="Canal">
-              <Select value={broadcastChannel} onChange={(e: any) => { setBroadcastChannel(e.target.value as any); setBroadcastErrorMsg(''); }}>
+              <Select value={broadcastChannel} onChange={(e) => { setBroadcastChannel(e.target.value === 'email' ? 'email' : 'alerta'); setBroadcastErrorMsg(''); }}>
                 <option value="email">E-mail</option>
                 <option value="alerta">Alerta interno no sistema</option>
               </Select>
             </Field>
             <Field label="Quando enviar">
-              <Select value={broadcastWhen} onChange={(e: any) => { setBroadcastWhen(e.target.value as any); setBroadcastErrorMsg(''); }}>
+              <Select value={broadcastWhen} onChange={(e) => { setBroadcastWhen(e.target.value === 'later' ? 'later' : 'now'); setBroadcastErrorMsg(''); }}>
                 <option value="now">Disparar imediatamente</option>
                 <option value="later">Agendar para depois</option>
               </Select>
             </Field>
             {broadcastWhen === 'later' && (
               <Field label="Data e hora do envio">
-                <Input type="datetime-local" value={broadcastAt} onChange={(e: any) => { setBroadcastAt(e.target.value); setBroadcastErrorMsg(''); }} />
+                <Input type="datetime-local" value={broadcastAt} onChange={(e) => { setBroadcastAt(e.target.value); setBroadcastErrorMsg(''); }} />
               </Field>
             )}
             <Field label="Mensagem">
-              <Textarea rows={4} value={broadcastMsg} onChange={(e: any) => { setBroadcastMsg(e.target.value); setBroadcastErrorMsg(''); }} placeholder="Mensagem que todas as arenas verão..." />
+              <Textarea rows={4} value={broadcastMsg} onChange={(e) => { setBroadcastMsg(e.target.value); setBroadcastErrorMsg(''); }} placeholder="Mensagem que todas as arenas verão..." />
             </Field>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => { setBroadcastMsg(''); setBroadcastAt(''); setBroadcastErrorMsg(''); }}>Limpar</Button>

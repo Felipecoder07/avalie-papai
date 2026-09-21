@@ -1,0 +1,29 @@
+[Unit]
+Description=Arenix API
+After=network.target
+
+[Service]
+Type=simple
+User=arenix
+Group=arenix
+WorkingDirectory=/srv/arenix/app/backend
+EnvironmentFile=/etc/arenix/backend.env
+Environment=NODE_ENV=production
+Environment=LISTEN_HOST=127.0.0.1
+Environment=TRUST_PROXY=127.0.0.1/32
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ReadOnlyPaths=/etc/arenix
+ReadWritePaths=/srv/arenix/app/backend/data /srv/arenix/app/backend/uploads /srv/arenix/backups
+
+[Install]
+WantedBy=multi-user.target

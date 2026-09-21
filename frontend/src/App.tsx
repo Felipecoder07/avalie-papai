@@ -1,4 +1,4 @@
-import { apiFetch as fetch, logout } from './utils/apiFetch';
+import { apiFetch as fetch } from './utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { MasterLayout } from './layouts/MasterLayout';
@@ -34,7 +34,7 @@ import { SessionGuard, RoleRoute } from './components/SessionGuard';
 interface AdminSessionResult {
   blockedMsg?: string;
   maintMsg?: string;
-  user?: any;
+  user?: import('./utils/session').SessionUser;
   error?: string;
 }
 

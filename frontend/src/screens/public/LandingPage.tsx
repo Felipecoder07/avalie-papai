@@ -13,7 +13,7 @@ const DEFAULT_PLANOS_LANDING = [
 export function LandingPage() {
   const [period, setPeriod] = useState('monthly');
   const [animating, setAnimating] = useState(false);
-  const [planos, setPlanos] = useState<any[]>(DEFAULT_PLANOS_LANDING);
+  const [planos, setPlanos] = useState(DEFAULT_PLANOS_LANDING);
 
   useEffect(() => {
     fetch('/api/auth/planos')

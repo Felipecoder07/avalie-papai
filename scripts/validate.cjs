@@ -21,7 +21,8 @@ const steps = [
   ['frontend-build', 'frontend', 'build'],
   ['cliente-build', 'tela cliente', 'build'],
   ['frontend-lint', 'frontend', 'lint'],
-  ['cliente-lint', 'tela cliente', 'lint']
+  ['cliente-lint', 'tela cliente', 'lint'],
+  ['public-assets', '.', 'check:public']
 ];
 let commit = 'indisponivel';
 let dirty = null;

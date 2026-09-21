@@ -134,6 +134,9 @@ const startSaaSCron = () => {
   cron.schedule('0 0 * * *', () => {
     processSaaS();
   });
+  cron.schedule('*/5 * * * *', () => {
+    processarOutbox().catch(error => logger.error('[Reconciliação CRON Error]', error));
+  });
   logger.log('Serviço de CRON Financeiro (SaaS) inicializado.');
 };
 

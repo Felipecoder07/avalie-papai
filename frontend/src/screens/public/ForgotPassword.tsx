@@ -1,3 +1,4 @@
+import { errorMessage } from '../../utils/errorMessage';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -25,8 +26,8 @@ export function ForgotPassword() {
       if (!res.ok) throw new Error(d.error || 'Erro ao processar solicitação.');
 
       setSubmitted(true);
-    } catch (err: any) {
-      setErrorMsg(err.message);
+    } catch (err) {
+      setErrorMsg(errorMessage(err));
     } finally {
       setLoading(false);
     }

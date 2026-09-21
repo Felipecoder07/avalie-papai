@@ -4,9 +4,11 @@ const cors = require('cors');
 const path = require("node:path");
 
 const app = express();
+require('./config/proxy').configureProxy(app);
+app.use(require('./middlewares/publicFiles').protectPublicFiles);
 const helmet = require('helmet');
 const { globalLimiter } = require('./middlewares/rateLimiter');
-app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'", 'https://accounts.google.com', 'https://sdk.mercadopago.com'], styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://accounts.google.com'], fontSrc: ["'self'", 'https://fonts.gstatic.com'], imgSrc: ["'self'", 'data:', 'https:'], connectSrc: ["'self'", 'https://accounts.google.com', 'https://api.mercadopago.com'], frameSrc: ['https://accounts.google.com', 'https://www.mercadopago.com.br'], frameAncestors: ["'none'"] } }, strictTransportSecurity: process.env.NODE_ENV === 'production' ? undefined : false }));
+app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'", 'https://accounts.google.com', 'https://sdk.mercadopago.com'], styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://accounts.google.com'], fontSrc: ["'self'", 'https://fonts.gstatic.com'], imgSrc: ["'self'", 'data:', 'https:'], connectSrc: ["'self'", 'https://accounts.google.com', 'https://api.mercadopago.com'], frameSrc: ['https://accounts.google.com', 'https://www.mercadopago.com.br'], frameAncestors: ["'none'"] } }, strictTransportSecurity: process.env.NODE_ENV === 'production' && process.env.ENABLE_HSTS === 'true' ? { maxAge: 31536000, includeSubDomains: false } : false }));
 app.use('/api', globalLimiter);
 app.disable('x-powered-by');
 
@@ -36,7 +38,6 @@ app.use((req,res,next)=>{
 
 // Trust proxy é necessário se a API estiver atrás de um Load Balancer (Render, Heroku, etc.)
 // Isso garante que o express-rate-limit bloqueie o IP real (RNF-009)
-app.set('trust proxy', process.env.TRUST_PROXY ? process.env.TRUST_PROXY.split(',').map(v=>v.trim()) : false);
 
 // Servir arquivos estáticos do frontend React e Uploads de Mídia
 const fs = require("node:fs");

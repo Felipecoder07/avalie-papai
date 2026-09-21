@@ -31,9 +31,13 @@ async function validateBatch(tenantId,items) {
   return validated;
 }
 function checkoutContact(contact) {
-  if (!contact || typeof contact.nome !== 'string' || !contact.nome.trim() || contact.nome.length>150 || typeof contact.telefone !== 'string' || !contact.telefone.trim() || contact.telefone.length>30) throw httpError(400,'Nome e telefone válidos são obrigatórios.');
-  for (const [field,max] of [['email',254],['cpf',30]]) if (contact[field] != null && (typeof contact[field] !== 'string' || contact[field].length>max)) throw httpError(400,'Contato inválido.');
-  return {nome:contact.nome.trim(),telefone:contact.telefone.trim(),email:contact.email?.trim()||null,cpf:contact.cpf?.trim()||null};
+  if (!contact || typeof contact.nome !== 'string' || typeof contact.telefone !== 'string') throw httpError(400,'Nome e telefone válidos são obrigatórios.');
+  const nome=contact.nome.trim(), telefone=contact.telefone.trim(), phoneDigits=telefone.replace(/\D/g,'');
+  if(nome.length<3 || nome.length>150 || /[\u0000-\u001F\u007F]/.test(nome) || !/^\d{10,11}$/.test(phoneDigits) || telefone.length>30) throw httpError(400,'Nome e telefone válidos são obrigatórios.');
+  const email=contact.email == null ? '' : String(contact.email).trim();
+  const cpf=contact.cpf == null ? '' : String(contact.cpf).trim();
+  if((email && (email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) || (cpf && !/^\d{11}$/.test(cpf.replace(/\D/g,'')))) throw httpError(400,'Contato inválido.');
+  return {nome,telefone,email:email||null,cpf:cpf||null};
 }
 async function createBookings({tenantId,items,actor,contact,source='public'}) {
   await ensureSecuritySchema(db);
@@ -77,4 +81,4 @@ async function createBookings({tenantId,items,actor,contact,source='public'}) {
     return {reservasCriadasIds:ids,valorTotalGeral:total,grupoId:group};
   });
 }
-module.exports={validateSlot,validateBatch,createBookings};
+module.exports={validateSlot,validateBatch,checkoutContact,createBookings};

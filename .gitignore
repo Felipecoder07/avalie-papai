@@ -9,3 +9,4 @@ cloudflared.exe
 dist/
 build/
 artifacts/homologacao/
+backend/data/

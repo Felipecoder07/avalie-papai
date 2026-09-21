@@ -1,99 +1,180 @@
 const db = require('../config/database');
 const logger = require('../utils/safeLogger').forModule('reconciliacaoOutbox');
-const { resolverContextoWebhookMercadoPago, liquidarWebhookMercadoPago } = require('../services/gatewayService');
+const { ensureSecuritySchema } = require('../config/securitySchema');
+const {
+  resolverContextoWebhookMercadoPago,
+  reconciliarPagamentoSemReferencia,
+  liquidarWebhookMercadoPago,
+  reconciliarEstornoMercadoPago
+} = require('../services/gatewayService');
 
-/**
- * Job para processar eventos financeiros isolados na SecurityOutbox.
- * Garante que pagamentos atrasados de reservas canceladas não se percam
- * e sejam notificados para a Arena realizar auditoria/estorno manual.
- */
-async function resolverPagamentosPendentes() {
-  logger.log('[Reconciliação] Buscando intenções de pagamento pendentes...');
-  try {
-    const limitTime = Date.now() - 5 * 60000; // 5 minutos atrás
-    const intents = await db.allAsync(`
-      SELECT DISTINCT gateway_ref FROM PaymentIntents 
-      WHERE state IN ('pending', 'unknown') AND gateway_ref IS NOT NULL AND updated < ?
-      UNION
-      SELECT DISTINCT gateway_ref FROM RefundIntents
-      WHERE state IN ('pending', 'unknown') AND gateway_ref IS NOT NULL AND created < ?
-    `, [limitTime, limitTime]);
+const DEFAULT_STALE_MS = 5 * 60 * 1000;
+const BATCH_SIZE = 100;
+let activeRun = null;
 
-    if (intents.length > 0) {
-      logger.log(`[Reconciliação] Sincronizando ${intents.length} intenções pendentes com o provedor...`);
-      for (const intent of intents) {
-        try {
-          const context = await resolverContextoWebhookMercadoPago(intent.gateway_ref);
-          if (context) {
-            await liquidarWebhookMercadoPago(intent.gateway_ref, context);
-            logger.log(`[Reconciliação] Intenção ${intent.gateway_ref} sincronizada com sucesso.`);
-          } else {
-            logger.warn(`[Reconciliação] Não foi possível resolver o contexto para a intenção ${intent.gateway_ref}.`);
-          }
-        } catch (err) {
-          logger.warn(`[Reconciliação] Erro ao sincronizar intenção ${intent.gateway_ref}:`, err.message);
-        }
-      }
-    }
-  } catch (err) {
-    logger.error('[Reconciliação Error] Falha ao sincronizar intenções com o provedor.', err);
-  }
+async function enqueueReview(id, kind, payload) {
+  await db.runAsync(
+    'INSERT OR IGNORE INTO SecurityOutbox(id,kind,payload,created) VALUES(?,?,?,?)',
+    [id, kind, JSON.stringify(payload), Date.now()]
+  );
 }
 
-async function processarOutbox() {
-  await resolverPagamentosPendentes();
-  
-  logger.log('[Reconciliação] Buscando eventos pendentes na SecurityOutbox...');
+async function resolverPagamentosPendentes({ now = Date.now(), olderThanMs = DEFAULT_STALE_MS } = {}) {
+  await ensureSecuritySchema(db);
+  const threshold = now - Math.max(0, olderThanMs);
+  const result = { payments: 0, refunds: 0, completed: 0, pending: 0, failed: 0, blocked: 0, errors: 0 };
 
-  try {
-    // Buscar até 100 eventos não enviados
-    const eventos = await db.allAsync(`
-      SELECT id, kind, payload, created 
-      FROM SecurityOutbox 
-      WHERE sent = 0 
-      ORDER BY id ASC LIMIT 100
-    `);
+  const paymentsWithoutReference = await db.allAsync(`
+    SELECT id, tenant_id, gateway_ref, updated
+    FROM PaymentIntents
+    WHERE state IN ('creating', 'pending', 'unknown')
+      AND (gateway_ref IS NULL OR TRIM(gateway_ref) = '')
+      AND updated <= ?
+    ORDER BY updated, id
+    LIMIT ?
+  `, [threshold, BATCH_SIZE]);
 
-    if (eventos.length === 0) {
-      return;
-    }
-
-    logger.log(`[Reconciliação] Processando ${eventos.length} eventos do Outbox...`);
-
-    for (const evento of eventos) {
-      // Registrar log de auditoria explícito para a Arena sobre o evento
-      let detalhes = '';
-      let tenantId = 0;
-      
-      try {
-        const payloadData = JSON.parse(evento.payload || '{}');
-        detalhes = payloadData.motivo || JSON.stringify(payloadData);
-        tenantId = payloadData.tenant_id || 0;
-      } catch {
-        detalhes = evento.payload;
+  for (const intent of paymentsWithoutReference) {
+    result.payments++;
+    try {
+      const outcome = await reconciliarPagamentoSemReferencia(intent.id);
+      const state = outcome?.state || 'pending';
+      if (Object.hasOwn(result, state)) result[state]++;
+      if (state === 'blocked' || (state === 'pending' && now - Number(intent.updated) >= 24 * 60 * 60 * 1000)) {
+        await enqueueReview(`reconcile:payment:${intent.id}`, 'payment_reference_reconciliation_required', {
+          tenant_id: intent.tenant_id,
+          payment_intent_id: intent.id,
+          state
+        });
       }
-
-      const mensagemAuditoria = `[Reconciliação Financeira] Atenção necessária: ${evento.kind}. ${detalhes}`;
-
-      // Usa uma transação para garantir que o outbox seja atualizado atomicamente
-      await db.transaction(async () => {
-        if (tenantId) {
-          await db.runAsync(`
-            INSERT INTO LogsAuditoria(tenant_id, usuario_id, evento, detalhes, ip)
-            VALUES(?, NULL, ?, ?, ?)
-          `, [tenantId, 'Alerta de Reconciliação', mensagemAuditoria, '127.0.0.1']);
-        }
-
-        await db.runAsync('UPDATE SecurityOutbox SET sent = 1 WHERE id = ?', [evento.id]);
-      });
-
-      logger.log(`[Reconciliação] Evento #${evento.id} processado (Tenant ${tenantId}).`);
+    } catch (error) {
+      result.errors++;
+      logger.warn(`[Reconciliação] Falha temporária ao pesquisar intenção ${intent.id}:`, error.message);
     }
-
-    logger.log('[Reconciliação] Concluído com sucesso.');
-  } catch (error) {
-    logger.error('[Reconciliação Error] Falha ao processar a tabela SecurityOutbox.', error);
   }
+
+  const payments = await db.allAsync(`
+    SELECT id, tenant_id, gateway_ref
+    FROM PaymentIntents
+    WHERE state IN ('pending', 'unknown')
+      AND gateway_ref IS NOT NULL
+      AND TRIM(gateway_ref) <> ''
+      AND updated <= ?
+    ORDER BY updated, id
+    LIMIT ?
+  `, [threshold, BATCH_SIZE]);
+
+  for (const intent of payments) {
+    result.payments++;
+    try {
+      const context = await resolverContextoWebhookMercadoPago(intent.gateway_ref);
+      const outcome = context
+        ? await liquidarWebhookMercadoPago(intent.gateway_ref, context)
+        : { state: 'blocked' };
+      const state = outcome?.state || 'pending';
+      if (Object.hasOwn(result, state)) result[state]++;
+      if (state === 'blocked') {
+        await enqueueReview(`reconcile:payment:${intent.id}`, 'payment_reconciliation_blocked', {
+          tenant_id: intent.tenant_id,
+          payment_intent_id: intent.id,
+          gateway_ref: intent.gateway_ref
+        });
+      }
+    } catch (error) {
+      result.errors++;
+      logger.warn(`[Reconciliação] Falha temporária ao consultar pagamento ${intent.gateway_ref}:`, error.message);
+    }
+  }
+
+  const refunds = await db.allAsync(`
+    SELECT ri.id, ri.gateway_ref, COALESCE(pi.tenant_id, r.tenant_id) AS tenant_id
+    FROM RefundIntents ri
+    LEFT JOIN PaymentIntents pi ON pi.gateway_ref = ri.gateway_ref
+    LEFT JOIN TransacoesGateway tx ON tx.gateway_ref = ri.gateway_ref
+    LEFT JOIN Reservas r ON r.id = tx.reserva_id
+    WHERE ri.state IN ('pending', 'unknown')
+      AND ri.created <= ?
+    ORDER BY ri.created, ri.id
+    LIMIT ?
+  `, [threshold, BATCH_SIZE]);
+
+  for (const intent of refunds) {
+    result.refunds++;
+    try {
+      const outcome = await reconciliarEstornoMercadoPago(intent.id);
+      const state = outcome?.state || 'pending';
+      if (Object.hasOwn(result, state)) result[state]++;
+      if (['blocked', 'failed'].includes(state)) {
+        await enqueueReview(`reconcile:refund:${intent.id}`, 'refund_reconciliation_required', {
+          tenant_id: intent.tenant_id,
+          refund_intent_id: intent.id,
+          gateway_ref: intent.gateway_ref,
+          state
+        });
+      }
+    } catch (error) {
+      result.errors++;
+      logger.warn(`[Reconciliação] Falha temporária ao consultar estorno ${intent.id}:`, error.message);
+    }
+  }
+
+  return result;
 }
 
-module.exports = { processarOutbox };
+async function processarEventosOutbox() {
+  const events = await db.allAsync(`
+    SELECT id, kind, payload, created
+    FROM SecurityOutbox
+    WHERE sent = 0
+    ORDER BY created, id
+    LIMIT ?
+  `, [BATCH_SIZE]);
+  let processed = 0;
+
+  for (const event of events) {
+    let payload;
+    try {
+      payload = JSON.parse(event.payload || '{}');
+    } catch {
+      logger.error(`[Reconciliação] Evento ${event.id} contém payload inválido e não foi descartado.`);
+      continue;
+    }
+
+    const tenantId = Number(payload.tenant_id);
+    if (!Number.isSafeInteger(tenantId) || tenantId <= 0) {
+      logger.error(`[Reconciliação] Evento ${event.id} não identifica uma arena e não foi descartado.`);
+      continue;
+    }
+
+    const details = payload.motivo || JSON.stringify(payload);
+    const auditMessage = `[Reconciliação Financeira] Atenção necessária: ${event.kind}. ${details}`;
+    let handled = false;
+    await db.transaction(async () => {
+      const claim = await db.runAsync('UPDATE SecurityOutbox SET sent = 1 WHERE id = ? AND sent = 0', [event.id]);
+      if (!claim.changes) return;
+      await db.runAsync(`
+        INSERT INTO LogsAuditoria(tenant_id, usuario_id, evento, detalhes, ip)
+        VALUES(?, NULL, ?, ?, ?)
+      `, [tenantId, 'Alerta de Reconciliação', auditMessage, '127.0.0.1']);
+      handled = true;
+    });
+    if (handled) processed++;
+  }
+
+  return processed;
+}
+
+function processarOutbox(options = {}) {
+  if (activeRun) return activeRun;
+  activeRun = (async () => {
+    const reconciliation = await resolverPagamentosPendentes(options);
+    const outbox = await processarEventosOutbox();
+    logger.log(`[Reconciliação] Pagamentos: ${reconciliation.payments}; estornos: ${reconciliation.refunds}; alertas: ${outbox}.`);
+    return { ...reconciliation, outbox };
+  })().finally(() => {
+    activeRun = null;
+  });
+  return activeRun;
+}
+
+module.exports = { processarOutbox, resolverPagamentosPendentes, processarEventosOutbox };

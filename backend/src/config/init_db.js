@@ -325,13 +325,13 @@ const initDb = () => {
       }
     });
 
-    // Seed de Motivos de Cancelamento Globais (tenant_id = NULL)
-    db.get("SELECT COUNT(*) as count FROM MotivosCancelamento WHERE tenant_id IS NULL", (err, row) => {
+    // Seed de Motivos de Cancelamento Globais (tenant_id = NULL ou 0)
+    db.get("SELECT COUNT(*) as count FROM MotivosCancelamento WHERE tenant_id IS NULL OR tenant_id = 0", (err, row) => {
       if (row && row.count === 0) {
-        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Preço muito alto')");
-        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Mudei de sistema')");
-        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Arena fechou')");
-        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Falta de recursos')");
+        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Preço muito alto')", () => {});
+        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Mudei de sistema')", () => {});
+        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Arena fechou')", () => {});
+        db.run("INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, 'Falta de recursos')", () => {});
       }
     });
 
@@ -400,6 +400,7 @@ const initDb = () => {
         tenant_id INTEGER NOT NULL,
         usuario_id INTEGER NOT NULL,
         verified INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (cliente_id, tenant_id, usuario_id),
         FOREIGN KEY (cliente_id) REFERENCES Clientes(id) ON DELETE CASCADE,
         FOREIGN KEY (tenant_id) REFERENCES Arenas(id) ON DELETE CASCADE,

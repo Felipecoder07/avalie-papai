@@ -1,3 +1,4 @@
+import type { Announcement } from '../types/api';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
@@ -7,7 +8,7 @@ import { Megaphone, X, Wrench } from 'lucide-react';
 
 export function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
-  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<Announcement[]>([]);
   const [maintenance, setMaintenance] = useState<{ active: boolean; message: string } | null>(null);
 
   useEffect(() => {
@@ -36,7 +37,7 @@ export function AdminLayout() {
       .catch(console.error);
   }, []);
 
-  const handleDismissAlert = (id: any) => {
+  const handleDismissAlert = (id: number) => {
     setAlerts(prev => prev.filter(a => a.id !== id));
   };
 

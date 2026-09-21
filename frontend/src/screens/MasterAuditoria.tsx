@@ -1,3 +1,4 @@
+import type { AuditLog, ActiveSession } from '../types/api';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { ShieldCheck, Search, KeyRound, Activity, Lock, Eye, EyeOff } from 'lucide-react';
@@ -9,8 +10,8 @@ export function MasterAuditoria() {
   const [pwCurrent, setPwCurrent] = useState('');
   const [pwNew, setPwNew] = useState('');
   const [pw2fa, setPw2fa] = useState('');
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [pwMsg, setPwMsg] = useState<{ text: string; type: 'success' | 'danger' } | null>(null);
   const [submittingPw, setSubmittingPw] = useState(false);
@@ -188,7 +189,7 @@ export function MasterAuditoria() {
                 <Input 
                   type={showPwCurrent ? "text" : "password"} 
                   value={pwCurrent} 
-                  onChange={(e: any) => setPwCurrent(e.target.value)} 
+                  onChange={(e) => setPwCurrent(e.target.value)}
                   placeholder="••••••••" 
                   className="pr-10"
                 />
@@ -207,7 +208,7 @@ export function MasterAuditoria() {
                 <Input 
                   type={showPwNew ? "text" : "password"} 
                   value={pwNew} 
-                  onChange={(e: any) => setPwNew(e.target.value)} 
+                  onChange={(e) => setPwNew(e.target.value)}
                   placeholder="••••••••" 
                   className="pr-10"
                 />
@@ -221,7 +222,7 @@ export function MasterAuditoria() {
               </div>
             </Field>
             <Field label="Segundo fator (código 2FA)" hint="Informe o código de 6 dígitos do app autenticador.">
-              <Input type="text" inputMode="numeric" maxLength={6} value={pw2fa} onChange={(e: any) => setPw2fa(e.target.value)} placeholder="000000" className="font-mono tracking-widest" />
+              <Input type="text" inputMode="numeric" maxLength={6} value={pw2fa} onChange={(e) => setPw2fa(e.target.value)} placeholder="000000" className="font-mono tracking-widest" />
             </Field>
             <p className="text-[11px] text-muted -mt-2">
               Configure seu autenticador com a chave individual fornecida no cadastro.

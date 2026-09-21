@@ -1,3 +1,5 @@
+import { useCallback } from 'react';
+import { errorMessage } from '../../utils/errorMessage';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useState, useEffect, useMemo } from 'react';
 import { UserPlus, CreditCard } from 'lucide-react';
@@ -351,34 +353,7 @@ export function AdminReservas() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Polling em tempo real do Pix Gateway no modal de reservas
-  useEffect(() => {
-    if (activeModal !== 'pix-gateway' || !selectedReserva || !gatewayRef) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/pagamentos/gateway/status/${selectedReserva.id}`, {
-          headers: {}
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status_pagamento === 'Pago' || data.status_pagamento === 'Parcial') {
-            showToast(`Pagamento Pix de R$ ${data.total_pago?.toFixed(2)} verificado e confirmado!`, 'success');
-            setActiveModal(null);
-            setSelectedReserva(null);
-            fetchGrade();
-          }
-        }
-      } catch (e) {
-        console.error('Erro no polling do Pix:', e);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [activeModal, selectedReserva, gatewayRef]);
-
-  // Carregar Grade principal
-  const fetchGrade = async () => {
+  const fetchGrade = useCallback(async () => {
     setLoading(true);
 
     let start = selectedDate;
@@ -403,7 +378,36 @@ export function AdminReservas() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedDate, scope] );
+
+  // Polling em tempo real do Pix Gateway no modal de reservas
+  useEffect(() => {
+    if (activeModal !== 'pix-gateway' || !selectedReserva || !gatewayRef) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/pagamentos/gateway/status/${selectedReserva.id}`, {
+          headers: {}
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status_pagamento === 'Pago' || data.status_pagamento === 'Parcial') {
+            showToast(`Pagamento Pix de R$ ${data.total_pago?.toFixed(2)} verificado e confirmado!`, 'success');
+            setActiveModal(null);
+            setSelectedReserva(null);
+            fetchGrade();
+          }
+        }
+      } catch (e) {
+        console.error('Erro no polling do Pix:', e);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [activeModal, selectedReserva, gatewayRef, fetchGrade]);
+
+  // Carregar Grade principal
+
 
   // Carregar dados gerais na inicialização
   useEffect(() => {
@@ -426,11 +430,6 @@ export function AdminReservas() {
         if (resQd.ok) {
           const qd = await resQd.json();
           setQuadras(qd);
-          // Set initial filter to first active court if weekly view is entered
-          const ativas = Array.isArray(qd) ? qd.filter((q: Quadra) => q.status === 'Ativa') : [];
-          if (scope === 'semanal' && !filterQuadraId && ativas.length > 0) {
-            setFilterQuadraId(ativas[0].id);
-          }
         }
       } catch (err) {
         console.warn('Erro ao carregar dados auxiliares:', err);
@@ -445,31 +444,7 @@ export function AdminReservas() {
     fetchGrade();
     setNrData(selectedDate);
     setBqData(selectedDate);
-  }, [selectedDate, scope, filterQuadraId]);
-
-  // Polling automático de confirmação do Pix Online no Modal de Reservas Admin
-  useEffect(() => {
-    if (activeModal !== 'pix-gateway' || !selectedReserva) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/public/status-reserva/${selectedReserva.id}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status_pagamento === 'Pago') {
-            showToast('Pagamento Pix confirmado com sucesso!', 'success');
-            setActiveModal(null);
-            setSelectedReserva(null);
-            fetchGrade();
-          }
-        }
-      } catch (err) {
-        console.error('Erro no polling Pix Admin:', err);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [activeModal, selectedReserva]);
+  }, [selectedDate, scope, filterQuadraId, fetchGrade]);
 
   // Se mudar para semanal e não tiver quadra selecionada, força a primeira quadra ativa
   useEffect(() => {
@@ -479,22 +454,22 @@ export function AdminReservas() {
     }
   }, [scope, quadras, filterQuadraId]);
 
+  const selectedReservaId = selectedReserva?.id;
   // Carregar valor pago real da reserva selecionada ao abrir detalhes
   useEffect(() => {
-    if (!selectedReserva) return;
+    if (!selectedReservaId) return;
 
     const fetchPagos = async () => {
       try {
-        const res = await fetch(`/api/pagamentos/reserva/${selectedReserva.id}`, {
+        const res = await fetch(`/api/pagamentos/reserva/${selectedReservaId}`, {
           headers: {}
         });
         if (res.ok) {
           const pags = await res.json();
-          const totalPago = pags.reduce((acc: number, curr: any) => acc + (curr.valor || 0), 0);
+          const totalPago = pags.reduce((acc: number, curr: { valor: number }) => acc + (curr.valor || 0), 0);
 
-          if (selectedReserva.valor_pago !== totalPago) {
-            setSelectedReserva(prev => prev ? { ...prev, valor_pago: totalPago } : null);
-          }
+          setSelectedReserva(prev => prev?.id === selectedReservaId && prev.valor_pago !== totalPago
+            ? { ...prev, valor_pago: totalPago } : prev);
         }
       } catch (err) {
         console.warn('Erro ao carregar pagamentos da reserva:', err);
@@ -502,7 +477,7 @@ export function AdminReservas() {
     };
 
     fetchPagos();
-  }, [selectedReserva?.id]);
+  }, [selectedReservaId]);
 
   // Recalcular horários disponíveis da reserva (Nova Reserva)
   useEffect(() => {
@@ -551,7 +526,7 @@ export function AdminReservas() {
     if (nrInicio && !livres.includes(nrInicio)) {
       setNrInicio('');
     }
-  }, [nrQuadraId, nrData, grade]);
+  }, [nrQuadraId, nrData, grade, nrInicio]);
 
   // Recalcular horários Fim (Nova Reserva)
   useEffect(() => {
@@ -584,7 +559,7 @@ export function AdminReservas() {
     } else {
       setNrFim('');
     }
-  }, [nrInicio, nrHorariosInicio]);
+  }, [nrInicio, nrHorariosInicio, nrQuadraId, grade, nrFim]);
 
   // Calcular valor previsto (Nova Reserva)
   useEffect(() => {
@@ -655,7 +630,7 @@ export function AdminReservas() {
     if (bqInicio && !livres.includes(bqInicio)) {
       setBqInicio('');
     }
-  }, [bqQuadraId, bqData, grade]);
+  }, [bqQuadraId, bqData, grade, bqInicio]);
 
   // Recalcular horários Fim (Bloqueio)
   useEffect(() => {
@@ -688,7 +663,7 @@ export function AdminReservas() {
     } else {
       setBqFim('');
     }
-  }, [bqInicio, bqHorariosInicio]);
+  }, [bqInicio, bqHorariosInicio, bqQuadraId, grade, bqFim]);
 
   // Máscara de telefone/WhatsApp
   const maskPhone = (val: string) => {
@@ -769,8 +744,8 @@ export function AdminReservas() {
       setQcErrors({});
       showToast(`Cliente ${novoCliente.nome} cadastrado e selecionado!`, 'success');
       return novoCliente.id;
-    } catch (err: any) {
-      showToast(err.message || 'Erro ao cadastrar cliente', 'error');
+    } catch (err) {
+      showToast(errorMessage(err) || 'Erro ao cadastrar cliente', 'error');
       return null;
     } finally {
       setQcLoading(false);
@@ -801,7 +776,7 @@ export function AdminReservas() {
       const isPixQrCode = nrRegistrarPagamento && nrPagMetodo === 'Pix (QR Code na Tela)';
       const valPago = Number.parseFloat(nrPagValor.replace(',', '.')) || nrValorPrevisto;
 
-      const payload: any = {
+      const payload: { cliente_id: number; quadra_id: number; data_reserva: string; hora_inicio: string; hora_fim: string; esporte: string; observacoes: string; valor_total: number; pagamento?: { registrar: boolean; metodo: string; valor: number } } = {
         cliente_id: finalClienteId,
         quadra_id: nrQuadraId,
         data_reserva: nrData,
@@ -881,8 +856,8 @@ export function AdminReservas() {
           fetchGrade();
           showToast('Reserva criada! Apresente o QR Code Pix na tela para o cliente.', 'success');
           return;
-        } catch (gatewayErr: any) {
-          showToast(`Reserva criada, mas falhou ao gerar QR Code: ${gatewayErr.message}`, 'error');
+        } catch (gatewayErr) {
+          showToast(`Reserva criada, mas falhou ao gerar QR Code: ${errorMessage(gatewayErr)}`, 'error');
           setActiveModal(null);
           resetNrForm();
           fetchGrade();
@@ -899,8 +874,8 @@ export function AdminReservas() {
       setActiveModal(null);
       resetNrForm();
       fetchGrade();
-    } catch (e: any) {
-      showToast(e.message, 'error');
+    } catch (e) {
+      showToast(errorMessage(e), 'error');
     }
   };
 
@@ -934,8 +909,8 @@ export function AdminReservas() {
       setActiveModal(null);
       resetBqForm();
       fetchGrade();
-    } catch (e: any) {
-      showToast(e.message, 'error');
+    } catch (e) {
+      showToast(errorMessage(e), 'error');
     }
   };
 
@@ -965,8 +940,8 @@ export function AdminReservas() {
       setActiveModal(null);
       setSelectedReserva(null);
       fetchGrade();
-    } catch (e: any) {
-      showToast(e.message, 'error');
+    } catch (e) {
+      showToast(errorMessage(e), 'error');
     }
   };
 
@@ -1001,8 +976,8 @@ export function AdminReservas() {
         setCopiaCola(dataJson.copia_cola || '');
         setActiveModal('pix-gateway');
         showToast('Cobrança Pix Online gerada com sucesso!', 'success');
-      } catch (e: any) {
-        showToast(e.message, 'error');
+      } catch (e) {
+        showToast(errorMessage(e), 'error');
       }
       return;
     }
@@ -1028,8 +1003,8 @@ export function AdminReservas() {
         setActiveModal(null);
         setSelectedReserva(null);
         fetchGrade();
-      } catch (e: any) {
-        showToast(e.message, 'error');
+      } catch (e) {
+        showToast(errorMessage(e), 'error');
       }
       return;
     }
@@ -1055,8 +1030,8 @@ export function AdminReservas() {
       setActiveModal(null);
       setSelectedReserva(null);
       fetchGrade();
-    } catch (e: any) {
-      showToast(e.message, 'error');
+    } catch (e) {
+      showToast(errorMessage(e), 'error');
     }
   };
 
@@ -1087,8 +1062,8 @@ export function AdminReservas() {
       setActiveModal(null);
       setSelectedReserva(null);
       fetchGrade();
-    } catch (e: any) {
-      showToast(e.message, 'error');
+    } catch (e) {
+      showToast(errorMessage(e), 'error');
     }
   };
 
@@ -1115,8 +1090,8 @@ export function AdminReservas() {
       setActiveModal(null);
       setSelectedBloqueio(null);
       fetchGrade();
-    } catch (e: any) {
-      showToast(e.message, 'error');
+    } catch (e) {
+      showToast(errorMessage(e), 'error');
     }
   };
 
@@ -1389,7 +1364,7 @@ export function AdminReservas() {
     ? []
     : clientes.filter(c => c.nome.toLowerCase().includes(nrClienteBusca.toLowerCase()) || (c.telefone && c.telefone.includes(nrClienteBusca)));
 
-  const formatCurrency = (val: any) => {
+  const formatCurrency = (val: number | undefined) => {
     const num = Number(val || 0);
     return 'R$ ' + num.toFixed(2).replace('.', ',');
   };
@@ -2208,8 +2183,8 @@ export function AdminReservas() {
                       setSelectedReserva(null);
                       fetchGrade();
                     }
-                  } catch (err: any) {
-                    showToast(err.message, 'error');
+                  } catch (err) {
+                    showToast(errorMessage(err), 'error');
                   }
                 }}
               >

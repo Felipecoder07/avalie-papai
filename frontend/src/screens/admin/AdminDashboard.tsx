@@ -1,7 +1,7 @@
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard } from 'lucide-react';
+
 
 interface Reserva {
   id: number;
@@ -67,11 +67,11 @@ interface GradeData {
 }
 
 interface DashboardMiniSlotProps {
-  quadra: any;
+  quadra: GradeData['quadras'][number];
   horaStr: string;
   isPastHour: boolean;
-  reservas: any[];
-  bloqueios: any[];
+  reservas: GradeData['reservas'];
+  bloqueios: GradeData['bloqueios'];
 }
 
 function DashboardMiniSlot({ quadra: q, horaStr, isPastHour, reservas, bloqueios }: Readonly<DashboardMiniSlotProps>) {
@@ -79,8 +79,8 @@ function DashboardMiniSlot({ quadra: q, horaStr, isPastHour, reservas, bloqueios
     return <div key={q.id} className="slot" style={{ background: 'transparent', border: 'none' }} />;
   }
 
-  const r = (reservas || []).find((res: any) => res.quadra_id === q.id && res.hora_inicio <= horaStr && res.hora_fim > horaStr);
-  const b = (bloqueios || []).find((bl: any) => bl.quadra_id === q.id && bl.hora_inicio <= horaStr && bl.hora_fim > horaStr);
+  const r = (reservas || []).find((res) => res.quadra_id === q.id && res.hora_inicio <= horaStr && res.hora_fim > horaStr);
+  const b = (bloqueios || []).find((bl) => bl.quadra_id === q.id && bl.hora_inicio <= horaStr && bl.hora_fim > horaStr);
 
   if (b) {
     return isPastHour ? (
@@ -176,9 +176,6 @@ export function AdminDashboard() {
   const reservasDia = data?.reservasDia ?? 0;
   const taxaOcupacao = data?.taxaOcupacao ?? 0;
   const faturamentoMes = data?.faturamentoMes ?? 0;
-
-  const dateParts = data?.hoje.split('-') || [];
-  const formattedSubtitle = dateParts.length === 3 ? `Dados de ${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : 'Dados de hoje';
 
   const isEndOfDay = new Date().getHours() >= 20;
 

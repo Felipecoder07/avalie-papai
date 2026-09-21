@@ -101,7 +101,7 @@ export function MasterLogin() {
                   type="email"
                   required
                   value={email}
-                  onChange={(e: any) => setEmail(e.target.value)}
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="master@courtmanager.com"
                   style={{ paddingLeft: '2.5rem' }}
                 />
@@ -117,7 +117,7 @@ export function MasterLogin() {
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
-                  onChange={(e: any) => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   style={{ paddingLeft: '2.5rem', paddingRight: '2.5rem' }}
                 />

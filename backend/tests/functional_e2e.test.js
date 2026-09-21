@@ -42,6 +42,9 @@ beforeEach(async () => {
     ? route.continue() : route.abort());
   page = await context.newPage();
   page.setDefaultTimeout(15000);
+  // The first navigation compiles both Vite applications on a cold cache. Keep
+  // UI assertions at 15s, but allow that initial module compilation to finish.
+  page.setDefaultNavigationTimeout(45000);
 });
 afterEach(async () => { await context?.close(); vi.unstubAllGlobals(); });
 afterAll(async () => {
@@ -87,8 +90,17 @@ async function athleteCheckout() {
   await dates.getByRole('button').nth(1).click();
   await page.getByRole('button', { name: /^08:00/ }).click();
   const sport = page.getByRole('dialog').getByRole('button', { name: /Beach Tennis/ });
+  const advance = page.getByRole('button', { name: 'Avançar', exact: true });
+  await Promise.race([
+    sport.waitFor({ state: 'visible' }),
+    advance.waitFor({ state: 'visible' })
+  ]);
   if (await sport.isVisible()) await sport.click();
-  await page.getByRole('button', { name: 'Avançar', exact: true }).click();
+  try {
+    await advance.click();
+  } catch (error) {
+    throw new Error(error.message + '; body: ' + await page.locator('body').innerText());
+  }
   await page.locator('input[type="tel"]').fill('11900000001');
   const responsePromise = page.waitForResponse(response => response.url().endsWith('/agendar') && response.request().method() === 'POST');
   await page.getByRole('button', { name: /^Pagar Pix/ }).click();
@@ -117,6 +129,62 @@ it('atleta entra, escolhe horario, gera Pix estatico e cancela reserva sem cobra
   const row = await db.getAsync('SELECT status FROM Reservas WHERE id=?', [result.reserva_id]);
   expect(row.status).toBe('Cancelada');
   expect(await db.getAsync('SELECT reserva_id FROM BookingCancellations WHERE reserva_id=?', [result.reserva_id])).toBeTruthy();
+}, 60000);
+
+it('visitante conclui checkout sem conta e recebe acesso restrito somente ao grupo criado', async () => {
+  const origin = sites[1].origin;
+  await page.goto(origin + '/arena/arena-a');
+  const dates = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Escolha a data' }) });
+  await dates.getByRole('button').nth(1).click();
+  await page.getByRole('button', { name: /^08:00/ }).click();
+  const sport = page.getByRole('dialog').getByRole('button', { name: /Beach Tennis/ });
+  const advance = page.getByRole('button', { name: 'Avançar', exact: true });
+  await Promise.race([sport.waitFor({ state: 'visible' }), advance.waitFor({ state: 'visible' })]);
+  if (await sport.isVisible()) await sport.click();
+  await advance.click();
+
+  await page.getByRole('button', { name: 'Continuar como visitante' }).click();
+  await page.getByPlaceholder('Ex: João da Silva').fill('Visitante E2E');
+  await page.getByPlaceholder('(00) 000000000').fill('11987654321');
+  const responsePromise = page.waitForResponse(response => response.url().endsWith('/agendar') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: /^Pagar Pix/ }).click();
+  const response = await responsePromise;
+  const result = await response.json();
+  expect(response.status(), result.error).toBe(201);
+  await page.getByRole('heading', { name: 'Pagamento Pix' }).waitFor();
+
+  const cookies = await context.cookies();
+  const guestCookie = cookies.find(cookie => cookie.name === 'cm_guest');
+  const guestCsrf = cookies.find(cookie => cookie.name === 'cm_guest_csrf');
+  expect(guestCookie?.httpOnly).toBe(true);
+  expect(guestCsrf?.httpOnly).toBe(false);
+  expect(cookies.some(cookie => cookie.name === 'cm_session')).toBe(false);
+
+  const booking = await db.getAsync('SELECT id,tenant_id,cliente_id,grupo_id,valor_total FROM Reservas WHERE id=?', [result.reserva_id]);
+  const client = await db.getAsync('SELECT nome,ativo FROM Clientes WHERE id=?', [booking.cliente_id]);
+  const contact = await db.getAsync('SELECT nome,telefone FROM BookingContacts WHERE tenant_id=? AND grupo_id=?', [booking.tenant_id, booking.grupo_id]);
+  expect(booking).toMatchObject({ tenant_id: 1, valor_total: 10000 });
+  expect(client).toEqual({ nome: 'Visitante', ativo: 0 });
+  expect(contact).toEqual({ nome: 'Visitante E2E', telefone: '(11) 98765-4321' });
+  expect(await db.getAsync('SELECT token_hash FROM GuestAccess WHERE tenant_id=? AND grupo_id=?', [booking.tenant_id, booking.grupo_id])).toBeTruthy();
+
+  expect((await context.request.get(`${origin}/api/public/tenant/arena-a/status-reserva/${booking.id}`)).status()).toBe(200);
+  expect((await context.request.get(`${origin}/api/public/tenant/arena-a/status-reserva/1`)).status()).toBe(404);
+  const noCsrf = await context.request.post(`${origin}/api/public/tenant/arena-a/cancelar-pendente`, { data: { reserva_id: booking.id } });
+  expect(noCsrf.status()).toBe(404);
+  expect((await db.getAsync('SELECT status FROM Reservas WHERE id=?', [booking.id])).status).toBe('Pendente');
+
+  const isolated = await browser.newContext();
+  try {
+    expect((await isolated.request.get(`${origin}/api/public/tenant/arena-a/status-reserva/${booking.id}`)).status()).toBe(404);
+  } finally {
+    await isolated.close();
+  }
+
+  const cancellation = page.waitForResponse(cancelResponse => cancelResponse.url().endsWith('/cancelar-pendente'));
+  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+  expect((await cancellation).ok()).toBe(true);
+  expect((await db.getAsync('SELECT status FROM Reservas WHERE id=?', [booking.id])).status).toBe('Cancelada');
 }, 60000);
 
 it.each(['aprovacao', 'desistencia'])('checkout com provedor simulado: %s', async scenario => {

@@ -1,10 +1,11 @@
+import type { SaaSArena } from '../types/api';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Building2, LayoutGrid, CalendarDays, Users, Wallet, TrendingDown, AlertTriangle, ArrowRight } from 'lucide-react';
 import { MetricCard } from '../components/MetricCard';
 import { LineChart } from '../components/LineChart';
 import { Card, Badge, Button } from '../components/ui';
-import { GROWTH, formatBRL, formatDate } from '../data/mock';
+import { formatBRL, formatDate } from '../data/mock';
 
 interface Props { onNavigate: (id: string) => void; }
 
@@ -24,7 +25,7 @@ export function MasterDashboard({ onNavigate }: Readonly<Props>) {
     clientesNovos30d: 0,
     mrrVariacao: 0,
     growthChart: [] as Array<{ month: string; count: number }>,
-    overdue: [] as any[]
+    overdue: [] as SaaSArena[]
   });
   const [loading, setLoading] = useState(true);
 
@@ -35,7 +36,7 @@ export function MasterDashboard({ onNavigate }: Readonly<Props>) {
       fetch('/api/saas/metrics', { headers }).then(r => r.json()),
       fetch('/api/saas/arenas', { headers }).then(r => r.json())
     ]).then(([metricsData, arenasData]) => {
-      const overdue = arenasData.filter((a: any) => a.faturas_atrasadas > 0);
+      const overdue = arenasData.filter((a: SaaSArena) => a.faturas_atrasadas > 0);
       setMetrics({
         active: metricsData.arenasAtivas || 0,
         blocked: metricsData.arenasBloqueadas || 0,
@@ -171,7 +172,7 @@ export function MasterDashboard({ onNavigate }: Readonly<Props>) {
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-xs font-medium text-danger">{a.faturas_atrasadas} faturas</div>
-                  <div className="text-[11px] text-muted">desde {formatDate(a.created_at || new Date().toISOString())}</div>
+                  <div className="text-[11px] text-muted">desde {formatDate(a.criado_em || new Date().toISOString())}</div>
                 </div>
               </button>
             ))}

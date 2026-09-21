@@ -1,20 +1,21 @@
+import type { SaaSPlan, SaaSInvoice } from '../types/api';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Wallet, Clock, CheckCircle } from 'lucide-react';
-import { Card, Badge, Button, PageHeader, Modal, Field, Input, Select, ConfirmModal } from '../components/ui';
+import { Pencil, Wallet, Clock, CheckCircle } from 'lucide-react';
+import { Card, Badge, Button, PageHeader, Modal, Field, Input, ConfirmModal } from '../components/ui';
 import { MetricCard } from '../components/MetricCard';
 import { LineChart } from '../components/LineChart';
-import { PLANS, REVENUE_HISTORY, formatBRL, formatDate, type Plan } from '../data/mock';
+import { formatBRL, formatDate } from '../data/mock';
 
 const BLOCK_AFTER_DAYS = 7;
 
 export function MasterFinanceiro() {
-  const [editPlan, setEditPlan] = useState<any | null>(null);
-  const [planos, setPlanos] = useState<any[]>([]);
-  const [faturas, setFaturas] = useState<any[]>([]);
+  const [editPlan, setEditPlan] = useState<(Omit<SaaSPlan, 'valor_mensal' | 'valor_anual'> & { valor_mensal: string; valor_anual: string }) | null>(null);
+  const [planos, setPlanos] = useState<SaaSPlan[]>([]);
+  const [faturas, setFaturas] = useState<SaaSInvoice[]>([]);
   const [filtroStatus, setFiltroStatus] = useState<string>('todas');
   const [loading, setLoading] = useState(true);
-  const [payTarget, setPayTarget] = useState<any | null>(null);
+  const [payTarget, setPayTarget] = useState<SaaSInvoice | null>(null);
   const [metrics, setMetrics] = useState({
     mrr: 0,
     mrrVariacao: 0,
@@ -331,7 +332,7 @@ export function MasterFinanceiro() {
                           <span className="text-xs text-muted">-</span>
                         )}
                       </td>
-                      <td className="px-5 py-3"><Badge status={getStatusColor(f.status) as any}>{f.status}</Badge></td>
+                      <td className="px-5 py-3"><Badge status={getStatusColor(f.status)}>{f.status}</Badge></td>
                       <td className="px-5 py-3 text-right">
                         {f.status !== 'Paga' ? (
                           <Button size="sm" variant="ghost" onClick={() => setPayTarget(f)}>Registrar pagamento</Button>
@@ -360,7 +361,7 @@ export function MasterFinanceiro() {
             <Field label="Nome do plano">
               <Input 
                 value={editPlan.nome} 
-                onChange={(e: any) => setEditPlan({ ...editPlan, nome: e.target.value })} 
+                onChange={(e) => setEditPlan({ ...editPlan, nome: e.target.value })}
               />
             </Field>
             <div className="grid grid-cols-2 gap-4">
@@ -368,14 +369,14 @@ export function MasterFinanceiro() {
                 <Input 
                   type="text" 
                   value={editPlan.valor_mensal} 
-                  onChange={(e: any) => setEditPlan({ ...editPlan, valor_mensal: formatCurrencyInput(e.target.value) })} 
+                  onChange={(e) => setEditPlan({ ...editPlan, valor_mensal: formatCurrencyInput(e.target.value) })}
                 />
               </Field>
               <Field label="Preço anual (R$)">
                 <Input 
                   type="text" 
                   value={editPlan.valor_anual} 
-                  onChange={(e: any) => setEditPlan({ ...editPlan, valor_anual: formatCurrencyInput(e.target.value) })} 
+                  onChange={(e) => setEditPlan({ ...editPlan, valor_anual: formatCurrencyInput(e.target.value) })}
                 />
               </Field>
             </div>
@@ -387,14 +388,14 @@ export function MasterFinanceiro() {
                 <Input 
                   type="number" 
                   value={editPlan.max_quadras} 
-                  onChange={(e: any) => setEditPlan({ ...editPlan, max_quadras: Number.parseInt(e.target.value, 10) || 0 })} 
+                  onChange={(e) => setEditPlan({ ...editPlan, max_quadras: Number.parseInt(e.target.value, 10) || 0 })}
                 />
               </Field>
               <Field label="Limite de usuários">
                 <Input 
                   type="number" 
                   value={editPlan.max_usuarios} 
-                  onChange={(e: any) => setEditPlan({ ...editPlan, max_usuarios: Number.parseInt(e.target.value, 10) || 0 })} 
+                  onChange={(e) => setEditPlan({ ...editPlan, max_usuarios: Number.parseInt(e.target.value, 10) || 0 })}
                 />
               </Field>
             </div>
@@ -406,7 +407,7 @@ export function MasterFinanceiro() {
       <ConfirmModal
         open={!!payTarget}
         onClose={() => setPayTarget(null)}
-        onConfirm={() => handlePay(payTarget?.id)}
+        onConfirm={() => { if (payTarget) void handlePay(payTarget.id); }}
         title="Registrar pagamento manual"
         message={<>Você está confirmando que recebeu manualmente o pagamento da fatura <strong>#{payTarget?.id}</strong> da arena <strong>{payTarget?.arena_nome}</strong> no valor de {formatBRL(payTarget?.valor || 0)}?</>}
         confirmLabel="Confirmar pagamento"

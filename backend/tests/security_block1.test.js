@@ -133,7 +133,9 @@ it('upgrading legacy memberships defaults to unverified and preserves every row'
     await isolated.runAsync('CREATE TABLE ClientMemberships(usuario_id INTEGER,tenant_id INTEGER,cliente_id INTEGER)');
     await isolated.runAsync('INSERT INTO ClientMemberships VALUES(2,1,1)');
     await require('../src/config/securitySchema').ensureSecuritySchema(isolated);
-    expect(await isolated.allAsync('SELECT * FROM ClientMemberships')).toEqual([{usuario_id:2,tenant_id:1,cliente_id:1,verified:0}]);
+    expect(await isolated.allAsync('SELECT * FROM ClientMemberships')).toEqual([
+      expect.objectContaining({ usuario_id: 2, tenant_id: 1, cliente_id: 1, verified: 0, created_at: expect.any(String) })
+    ]);
   } finally { await new Promise(resolve=>isolated.close(resolve)); }
 });
 

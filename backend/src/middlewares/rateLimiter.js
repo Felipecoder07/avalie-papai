@@ -4,15 +4,12 @@ const { ipKeyGenerator } = require('express-rate-limit');
 const isTest = () => process.env.NODE_ENV === 'test';
 
 // Gera chave única por Tenant/Conta para não punir IPs compartilhados (NAT)
-const tenantKeyGenerator = (req, res) => {
+const tenantKeyGenerator = (req) => {
   // Usa o gerador nativo do express-rate-limit para evitar erros de validação IPv6 (ERR_ERL_KEY_GEN_IPV6)
-  const ipSafe = ipKeyGenerator(req, res);
+  const ipSafe = ipKeyGenerator(req.ip);
   
   if (req.user && req.user.tenant_id) {
     return `tenant_${req.user.tenant_id}_${req.user.id || ipSafe}`;
-  }
-  if (req.headers['x-tenant-slug']) {
-    return `slug_${req.headers['x-tenant-slug']}_${ipSafe}`;
   }
   return ipSafe;
 };

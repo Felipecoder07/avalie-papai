@@ -5,6 +5,11 @@ vi.spyOn(require('../src/services/emailService'),'sendEmail').mockResolvedValue(
 const app = require('../src/app');
 const base = '/api/pagamentos/gateway';
 const login = id => fixture.login(app,id);
+async function productionCredentials() {
+  vi.stubEnv('SECRETS_KEYRING', JSON.stringify({ fixture: 'ab'.repeat(32) }));
+  vi.stubEnv('SECRETS_ACTIVE_KEY_ID', 'fixture');
+  await require('../src/services/secretRotationService').rotateStoredSecrets(db, { apply: true });
+}
 let provider;
 beforeAll(fixture.initialize);
 beforeEach(async () => {
@@ -44,7 +49,7 @@ it('creates Pix with the tenant credential and reuses the persisted intent',asyn
   const [url,options]=provider.mock.calls[0];
   expect(url).toBe('https://api.mercadopago.com/v1/payments');
   expect(options.headers.Authorization).toBe('Bearer FIXTURE-ARENA-TOKEN');
-  expect(JSON.parse(options.body)).toMatchObject({transaction_amount:100,description:'Reserva #1 no Arenix'});
+  expect(JSON.parse(options.body)).toMatchObject({transaction_amount:100,description:'Reserva #1 no Arenix',external_reference:options.headers['X-Idempotency-Key']});
   expect((await db.getAsync('SELECT id FROM PaymentIntents')).id).toBe(options.headers['X-Idempotency-Key']);
   expect(await db.getAsync('SELECT COUNT(*) AS count FROM TransacoesGateway')).toEqual({count:1});
   await unpaid();
@@ -96,10 +101,21 @@ it('configuration and arena reads redact secrets and preserve omitted credential
 });
 it('updates a credential and explicitly disconnects without returning it',async()=>{
   const session=await login(actors.admin);
+  respond({id:456});
   expect((await auth(request(app).post(base+'/maquineta'),session).send({gateway_access_token:'NEW-FIXTURE-TOKEN'})).status).toBe(200);
-  expect((await db.getAsync('SELECT gateway_access_token FROM Arenas WHERE id=1')).gateway_access_token).toBe('NEW-FIXTURE-TOKEN');
+  expect(provider.mock.calls[0][0]).toBe('https://api.mercadopago.com/users/me');
+  expect(provider.mock.calls[0][1].headers.Authorization).toBe('Bearer NEW-FIXTURE-TOKEN');
+  expect(await db.getAsync('SELECT gateway_access_token,gateway_user_id FROM Arenas WHERE id=1')).toEqual({gateway_access_token:'NEW-FIXTURE-TOKEN',gateway_user_id:'456'});
   expect((await auth(request(app).post(base+'/oauth/desconectar'),session).send({senha_atual:fixture.PASSWORD})).status).toBe(200);
-  expect((await db.getAsync('SELECT gateway_access_token FROM Arenas WHERE id=1')).gateway_access_token).toBeNull();
+  expect(await db.getAsync('SELECT gateway_access_token,gateway_user_id FROM Arenas WHERE id=1')).toEqual({gateway_access_token:null,gateway_user_id:null});
+});
+it('rejects an invalid manually configured credential without replacing the current account',async()=>{
+  const session=await login(actors.admin);
+  respondStatus(401,{message:'invalid token'});
+  const response=await auth(request(app).post(base+'/maquineta'),session).send({gateway_access_token:'INVALID-FIXTURE-TOKEN'});
+  expect(response.status).toBe(400);
+  expect(response.body.error).toMatch(/Credencial do gateway/i);
+  expect(await db.getAsync('SELECT gateway_access_token,gateway_user_id FROM Arenas WHERE id=1')).toEqual({gateway_access_token:'FIXTURE-ARENA-TOKEN',gateway_user_id:'123'});
 });
 it.each([actors.owner,actors.admin,actors.master])('production forbids simulation for actor %s',async id=>{
   const session=await login(id);
@@ -111,6 +127,7 @@ it.each([actors.owner,actors.admin,actors.master])('production forbids simulatio
 });
 it('five signed HTTP webhooks credit exactly once in production branches',async()=>{
   await transaction();
+  await productionCredentials();
   vi.stubEnv('NODE_ENV','production');
   provider.mockImplementation(async()=>({ok:true,json:async()=>approvedPayment()}));
   const responses=await Promise.all(Array.from({length:5},()=>signedWebhook(app,991)));
@@ -122,6 +139,7 @@ it('five signed HTTP webhooks credit exactly once in production branches',async(
 });
 it.each(['invalid signature','expired signature','unsigned'])('rejects %s before calling the provider',async mode=>{
   await transaction();
+  await productionCredentials();
   vi.stubEnv('NODE_ENV','production');
   const response=mode==='unsigned'
     ? await request(app).post(base+'/webhook').send({action:'payment.updated',data:{id:991}})
@@ -186,6 +204,28 @@ it('provider HTTP 503 returns retry and later delivery credits once',async()=>{
   expect(await db.getAsync('SELECT COUNT(*) AS count,SUM(valor) AS total FROM Pagamentos')).toEqual({count:1,total:10000});
   expect(await db.getAsync('SELECT COUNT(*) AS count FROM GatewayCredits')).toEqual({count:1});
 });
+it('recovers and persists the receiving account for a valid legacy connection',async()=>{
+  await transaction();
+  await db.runAsync('UPDATE Arenas SET gateway_user_id=NULL WHERE id=1');
+  respond({id:123});
+  respond(approvedPayment());
+  expect((await signedWebhook(app,991)).status).toBe(200);
+  expect(provider.mock.calls.map(call=>call[0])).toEqual([
+    'https://api.mercadopago.com/users/me',
+    'https://api.mercadopago.com/v1/payments/991'
+  ]);
+  expect((await db.getAsync('SELECT gateway_user_id FROM Arenas WHERE id=1')).gateway_user_id).toBe('123');
+  expect(await db.getAsync('SELECT COUNT(*) AS count,SUM(valor) AS total FROM Pagamentos')).toEqual({count:1,total:10000});
+});
+it('asks the provider to retry while a legacy account identity cannot be recovered',async()=>{
+  await transaction();
+  await db.runAsync('UPDATE Arenas SET gateway_user_id=NULL WHERE id=1');
+  respondStatus(503);
+  expect((await signedWebhook(app,991)).status).toBe(503);
+  expect(provider).toHaveBeenCalledTimes(1);
+  expect((await db.getAsync('SELECT gateway_user_id FROM Arenas WHERE id=1')).gateway_user_id).toBeNull();
+  await unpaid();
+});
 it('card approval uses the same ledger as repeated notification',async()=>{
   const owner=await login(actors.owner);
   respond({id:991,status:'approved'});
@@ -199,6 +239,7 @@ it('terminal charge uses the configured device and stays pending',async()=>{
   respond({id:991});
   expect((await charge(admin,{metodo:'Maquineta'})).status).toBe(200);
   expect(provider.mock.calls[0][0]).toBe('https://api.mercadopago.com/v1/devices/device_test_123/point-integration-api/payment-intents');
+  expect(JSON.parse(provider.mock.calls[0][1].body).additional_info.external_reference).toBe(provider.mock.calls[0][1].headers['X-Idempotency-Key']);
   await unpaid();
 });
 it.each([true,false])('refund is booked only after provider confirmation (%s)',async approved=>{

@@ -343,11 +343,17 @@ const agendarReservaPublica = async (req, res) => {
 
     const clientCookies=require('../services/sessionService').cookies(req);
     if(clientCookies.cm_session) req.user=await require('../services/sessionService').authenticate(req);
-    const inserted = await require('../services/bookingService').createBookings({tenantId:arena.id,items:listaItens,actor:req.user,contact:{nome,email,telefone,cpf}});
+    const clientAccess=require('../services/clientAccessService');
+    const created = await db.transaction(async()=>{
+      const inserted=await require('../services/bookingService').createBookings({tenantId:arena.id,items:listaItens,actor:req.user,contact:{nome,email,telefone,cpf}});
+      const guestAccess=await clientAccess.createGuestAccess(arena.id,inserted.grupoId);
+      return {inserted,guestAccess};
+    });
+    const {inserted,guestAccess}=created;
     const valorTotalGeral = inserted.valorTotalGeral / 100;
     reservasCriadasIds = inserted.reservasCriadasIds;
     const primeiraReservaId = reservasCriadasIds[0];
-    await require('../services/clientAccessService').createGuestAccess(arena.id,inserted.grupoId,res);
+    clientAccess.setGuestCookies(res,guestAccess);
 
     let pixData = null;
     try {

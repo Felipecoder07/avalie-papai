@@ -1,8 +1,9 @@
+import { errorMessage } from '../../utils/errorMessage';
 import { apiFetch as fetch, logout } from '../../utils/apiFetch';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getStoredUser } from '../../utils/session';
-import { safeStorage } from '../../utils/safeStorage';
+
 
 interface Reserva {
   id: number;
@@ -17,7 +18,7 @@ interface Reserva {
 
 export function PortalCliente() {
   const navigate = useNavigate();
-  const user = getStoredUser();
+  const [user] = useState(getStoredUser);
 
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +38,7 @@ export function PortalCliente() {
 
   const fetchDashboard = async () => {
     setLoading(true);
+    setError('');
     try {
       const response = await fetch('/api/reservas/minhas', {
         headers: {}
@@ -45,8 +47,8 @@ export function PortalCliente() {
       if (!response.ok) throw new Error('Falha ao obter reservas.');
       const data = await response.json();
       setReservas(data);
-    } catch (err: any) {
-      setError(err.message || 'Erro ao carregar painel.');
+    } catch (err) {
+      setError(errorMessage(err) || 'Erro ao carregar painel.');
     } finally {
       setLoading(false);
     }
@@ -58,13 +60,13 @@ export function PortalCliente() {
       return;
     }
     fetchDashboard();
-  }, []);
+  }, [navigate, user]);
 
   // Polling para verificar se o pagamento foi confirmado
   useEffect(() => {
     if (!pagandoReserva) return;
 
-    let intervalId: any;
+
     const checkStatus = async () => {
       try {
         const res = await fetch(`/api/pagamentos/gateway/status/${pagandoReserva.id}`, {
@@ -85,7 +87,7 @@ export function PortalCliente() {
       }
     };
 
-    intervalId = setInterval(checkStatus, 3000);
+    const intervalId = setInterval(checkStatus, 3000);
     return () => clearInterval(intervalId);
   }, [pagandoReserva]);
 
@@ -114,8 +116,8 @@ export function PortalCliente() {
 
       setQrCode(data.qr_code);
       setCopiaCola(data.copia_cola);
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
       setPagandoReserva(null);
     } finally {
       setLoadingGateway(false);
@@ -135,6 +137,7 @@ export function PortalCliente() {
 
   return (
     <div className="min-h-screen bg-cream text-charcoal flex flex-col font-sans">
+      {error && <p role="alert" className="p-4 text-red-700">{error}</p>}
       {/* Header */}
       <header className="bg-white border-b border-charcoal/10 px-6 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">

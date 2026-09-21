@@ -8,7 +8,7 @@ interface LineChartProps {
 }
 
 export function LineChart({ data, height = 240, color = '#1C1A18', formatValue = (v) => String(v) }: Readonly<LineChartProps>) {
-  const options: any = {
+  const options: import('apexcharts').ApexOptions = {
     chart: {
       type: 'line',
       zoom: {

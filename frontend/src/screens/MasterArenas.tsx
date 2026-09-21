@@ -1,6 +1,8 @@
+import { useCallback } from 'react';
+import type { SaaSArena, SaaSPlan } from '../types/api';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useMemo, useState, useEffect } from 'react';
-import { Plus, Eye, EyeOff, Pencil, Ban, CheckCircle, Trash2, Filter, ChevronDown, Globe } from 'lucide-react';
+import { Plus, Eye, Pencil, Ban, CheckCircle, Trash2, Filter, ChevronDown, Globe } from 'lucide-react';
 import { Card, Badge, Button, PageHeader, Modal, ConfirmModal, Field, Input, Select, EmptyState, Pagination } from '../components/ui';
 import { PLANS, formatDate, formatBRL } from '../data/mock';
 
@@ -9,9 +11,9 @@ interface Props { onNavigate: (id: string) => void; }
 const PAGE_SIZE = 8;
 
 export function MasterArenas({ onNavigate }: Readonly<Props>) {
-  const [arenas, setArenas] = useState<any[]>([]);
-  const [planosSaaS, setPlanosSaaS] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [arenas, setArenas] = useState<SaaSArena[]>([]);
+  const [planosSaaS, setPlanosSaaS] = useState<SaaSPlan[]>([]);
+  const [, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | string>('all');
   const [planFilter, setPlanFilter] = useState<'all' | string>('all');
@@ -32,10 +34,10 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
     trial_dias: '14'
   });
 
-  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
-  const [blockTarget, setBlockTarget] = useState<any | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SaaSArena | null>(null);
+  const [blockTarget, setBlockTarget] = useState<SaaSArena | null>(null);
 
-  const fetchArenas = async () => {
+  const fetchArenas = useCallback(async () => {
     try {
       setLoading(true);
       const [resArenas, resPlanos] = await Promise.all([
@@ -46,19 +48,19 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
       const dataPlanos = await resPlanos.json();
       setArenas(dataArenas);
       setPlanosSaaS(dataPlanos);
-      if (dataPlanos.length > 0 && !newArena.plano_id) {
-        setNewArena(prev => ({ ...prev, plano_id: String(dataPlanos[0].id) }));
+      if (dataPlanos.length > 0) {
+        setNewArena(prev => ({ ...prev, plano_id: prev.plano_id || String(dataPlanos[0].id) }));
       }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  };
+  }, [] );
 
   useEffect(() => {
     fetchArenas();
-  }, []);
+  }, [fetchArenas]);
 
   const handleCreateArena = async () => {
     if (!newArena.nome || !newArena.email) {
@@ -104,8 +106,8 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
       const st = a.status === 1 ? 'ativa' : a.status === 0 ? 'bloqueada' : 'excluida';
       if (statusFilter !== 'all' && st !== statusFilter) return false;
       if (planFilter !== 'all' && (a.plano_nome || 'Basic') !== planFilter) return false;
-      if (dateFrom && new Date(a.created_at) < new Date(dateFrom)) return false;
-      if (dateTo && new Date(a.created_at) > new Date(dateTo)) return false;
+      if (dateFrom && new Date(a.criado_em) < new Date(dateFrom)) return false;
+      if (dateTo && new Date(a.criado_em) > new Date(dateTo)) return false;
       return true;
     });
   }, [arenas, search, statusFilter, planFilter, dateFrom, dateTo]);
@@ -129,13 +131,13 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
           <div className="relative flex-1 min-w-[200px]">
             <Input placeholder="Buscar por nome, cidade ou e-mail..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
           </div>
-          <Select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value as any); setPage(1); }} className="w-auto min-w-[130px]">
+          <Select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="w-auto min-w-[130px]">
             <option value="all">Todos os status</option>
             <option value="ativa">Ativa</option>
             <option value="bloqueada">Bloqueada</option>
             <option value="trial">Trial</option>
           </Select>
-          <Select value={planFilter} onChange={(e) => { setPlanFilter(e.target.value as any); setPage(1); }} className="w-auto min-w-[120px]">
+          <Select value={planFilter} onChange={(e) => { setPlanFilter(e.target.value); setPage(1); }} className="w-auto min-w-[120px]">
             <option value="all">Todos os planos</option>
             {PLANS.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
           </Select>
@@ -191,9 +193,9 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
                     </td>
                     <td className="px-4 py-3 text-muted" style={{maxWidth: '120px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{a.endereco || 'Não informado'}</td>
                     <td className="px-4 py-3"><span className="text-charcoal font-medium">{a.plano_nome || 'Basic'}</span></td>
-                    <td className="px-4 py-3"><Badge status={st as any}>{statusLabel[st]}</Badge></td>
-                    <td className="px-4 py-3 text-muted tabular">{formatDate(a.created_at || new Date().toISOString())}</td>
-                    <td className="px-4 py-3"><Badge status={fin as any}>{financeLabel[fin]}</Badge></td>
+                    <td className="px-4 py-3"><Badge status={st === 'excluida' ? 'desativado' : st}>{statusLabel[st]}</Badge></td>
+                    <td className="px-4 py-3 text-muted tabular">{formatDate(a.criado_em || new Date().toISOString())}</td>
+                    <td className="px-4 py-3"><Badge status={fin}>{financeLabel[fin]}</Badge></td>
                     <td className="px-4 py-3">
                       {a.gateway_conectado ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600 }}>

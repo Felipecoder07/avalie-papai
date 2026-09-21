@@ -6,7 +6,7 @@ async function identityCutover(db) {
     if (await db.getAsync('SELECT 1 FROM SecurityMigrations WHERE version=4')) return;
     const users = await db.allAsync('SELECT id,two_factor_secret FROM Usuarios WHERE two_factor_secret IS NOT NULL');
     for (const user of users) {
-      if (decrypt(user.two_factor_secret) === 'JBSWY3DPEHPK3PXP') {
+      if (decrypt(user.two_factor_secret, { allowPlaintext: true }) === 'JBSWY3DPEHPK3PXP') {
         await db.runAsync('UPDATE Usuarios SET two_factor_secret=NULL WHERE id=?', [user.id]);
         await db.runAsync('DELETE FROM MfaRecovery WHERE usuario_id=?', [user.id]);
       }

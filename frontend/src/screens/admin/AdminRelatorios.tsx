@@ -1,6 +1,9 @@
+import { useEventCallback } from '../../hooks/useEventCallback';
+import { errorMessage } from '../../utils/errorMessage';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Banknote, CreditCard, Ticket } from 'lucide-react';
+import { Pagination } from '../../components/ui';
 import '../../assets/css/relatorios.css';
 
 interface Quadra {
@@ -31,10 +34,11 @@ export function AdminRelatorios() {
   const [dataFim, setDataFim] = useState<string>(getTodayStr());
   const [filterQuadraId, setFilterQuadraId] = useState<string | number>('');
   const [quadras, setQuadras] = useState<Quadra[]>([]);
-  const [dadosAtuais, setDadosAtuais] = useState<any>(null);
+  const [dadosAtuais, setDadosAtuais] = useState<import('../../types/reports').ReportData | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Show toast helper
   const showToast = (message: string, type: 'success' | 'error') => {
@@ -61,7 +65,7 @@ export function AdminRelatorios() {
   }, []);
 
   // Handle Generate Report
-  const gerarRelatorio = async (currentTab = relAtivo) => {
+  const gerarRelatorio = useEventCallback(async (currentTab = relAtivo, targetPage = currentPage) => {
     if (!dataInicio || !dataFim) {
       showToast('Selecione o período.', 'error');
       return;
@@ -77,6 +81,8 @@ export function AdminRelatorios() {
 
     const params = new URLSearchParams({ data_inicio: dataInicio, data_fim: dataFim });
     if (filterQuadraId) params.append('quadra_id', String(filterQuadraId));
+    params.append('pagina', String(targetPage));
+    params.append('limite', '50');
 
     try {
       const res = await fetch(`/api/relatorios/${currentTab}?${params}`, {
@@ -86,18 +92,24 @@ export function AdminRelatorios() {
       if (!res.ok) throw new Error(data.error || 'Erro ao gerar relatório');
 
       setDadosAtuais(data);
-    } catch (e: any) {
-      setErrorMsg(e.message || 'Erro de conexão.');
+    } catch (e) {
+      setErrorMsg(errorMessage(e) || 'Erro de conexão.');
     } finally {
       setLoading(false);
     }
-  };
+  } );
 
   // Trigger report automatically when tab changes if dates are set
   useEffect(() => {
     localStorage.setItem('courtmanager_rel_ativo', relAtivo);
-    gerarRelatorio(relAtivo);
-  }, [relAtivo]);
+    setCurrentPage(1);
+    gerarRelatorio(relAtivo, 1);
+  }, [gerarRelatorio, relAtivo]);
+
+  const changePage = (page: number) => {
+    setCurrentPage(page);
+    gerarRelatorio(relAtivo, page);
+  };
 
   // Export CSV
   const exportarCSV = () => {
@@ -111,7 +123,7 @@ export function AdminRelatorios() {
 
     if (relAtivo === 'faturamento') {
       rows.push(['Data', 'ID', 'Cliente', 'Quadra', 'Horário', 'Valor Total', 'Pago', 'Saldo', 'Métodos', 'Pagamento', 'Operador']);
-      dadosAtuais.reservas?.forEach((r: any) => {
+      dadosAtuais.reservas?.forEach((r) => {
         const saldo = Math.max(0, r.valor_total - r.total_pago);
         rows.push([
           fmtData(r.data_reserva),
@@ -129,7 +141,7 @@ export function AdminRelatorios() {
       });
     } else if (relAtivo === 'ocupacao') {
       rows.push(['Quadra', 'Reservas', 'Min. Reservados', 'Min. Bloqueados', 'Min. Disponíveis', 'Taxa %']);
-      dadosAtuais.quadras?.forEach((q: any) => {
+      dadosAtuais.quadras?.forEach((q) => {
         rows.push([
           q.quadra_nome,
           q.totalReservas.toString(),
@@ -141,7 +153,7 @@ export function AdminRelatorios() {
       });
     } else if (relAtivo === 'reservas') {
       rows.push(['Data', 'ID', 'Cliente', 'Quadra', 'Horário', 'Valor', 'Status', 'Pagamento', 'Operador']);
-      dadosAtuais.reservas?.forEach((r: any) => {
+      dadosAtuais.reservas?.forEach((r) => {
         rows.push([
           fmtData(r.data_reserva),
           `#${r.id}`,
@@ -156,7 +168,7 @@ export function AdminRelatorios() {
       });
     } else if (relAtivo === 'inadimplencia') {
       rows.push(['Data', 'ID', 'Cliente', 'Contato', 'Quadra', 'Horário', 'Valor Total', 'Pago', 'Saldo Devedor']);
-      dadosAtuais.inadimplentes?.forEach((r: any) => {
+      dadosAtuais.inadimplentes?.forEach((r) => {
         rows.push([
           fmtData(r.data_reserva),
           `#${r.id}`,
@@ -171,7 +183,7 @@ export function AdminRelatorios() {
       });
     } else if (relAtivo === 'cancelamentos') {
       rows.push(['Data', 'ID', 'Cliente', 'Quadra', 'Horário', 'Motivo', 'Observações', 'Valor', 'Pago Antes', 'Status Pag.', 'Operador']);
-      dadosAtuais.cancelamentos?.forEach((r: any) => {
+      dadosAtuais.cancelamentos?.forEach((r) => {
         rows.push([
           fmtData(r.data_reserva),
           `#${r.id}`,
@@ -204,7 +216,7 @@ export function AdminRelatorios() {
   };
 
   // Helper Formats
-  const moeda = (val: number) => {
+  const moeda = (val: number | undefined) => {
     return 'R$ ' + Number(val || 0).toFixed(2).replace('.', ',');
   };
 
@@ -232,7 +244,7 @@ export function AdminRelatorios() {
   // Render Specific Views
   const renderFaturamento = () => {
     if (!dadosAtuais) return null;
-    const { reservas = [], totais = { bruto: 0, pago: 0, pendente: 0 } } = dadosAtuais;
+    const { reservas = [], totais = { bruto: 0, pago: 0, pendente: 0 }, paginacao } = dadosAtuais;
 
     return (
       <>
@@ -252,7 +264,7 @@ export function AdminRelatorios() {
           </div>
           <div className="rel-kpi">
             <div className="rel-kpi-label">Reservas</div>
-            <div className="rel-kpi-value">{reservas.length}</div>
+            <div className="rel-kpi-value">{paginacao?.total ?? reservas.length}</div>
           </div>
         </div>
 
@@ -260,7 +272,7 @@ export function AdminRelatorios() {
         <div className="table-card">
           <div style={{ padding: 'var(--s-4) var(--s-5)', borderBottom: '1px solid var(--border-passive)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span id="table-title">Relatório de Faturamento — {fmtData(dataInicio)} a {fmtData(dataFim)}</span>
-            <span id="table-count">{reservas.length} registros</span>
+            <span id="table-count">{reservas.length} de {paginacao?.total ?? reservas.length} registros</span>
           </div>
           <div className="table-wrap">
             <table>
@@ -287,7 +299,7 @@ export function AdminRelatorios() {
                     </td>
                   </tr>
                 ) : (
-                  reservas.map((r: any) => {
+                  reservas.map((r) => {
                     const saldo = Math.max(0, r.valor_total - r.total_pago);
                     return (
                       <tr key={r.id}>
@@ -326,7 +338,7 @@ export function AdminRelatorios() {
   const renderOcupacao = () => {
     if (!dadosAtuais) return null;
     const { quadras: qList = [], taxaGeral = 0, periodo = { dias: 1 } } = dadosAtuais;
-    const totalReservas = qList.reduce((acc: number, curr: any) => acc + curr.totalReservas, 0);
+    const totalReservas = qList.reduce((acc: number, curr) => acc + curr.totalReservas, 0);
 
     return (
       <>
@@ -374,7 +386,7 @@ export function AdminRelatorios() {
                     </td>
                   </tr>
                 ) : (
-                  qList.map((q: any) => {
+                  qList.map((q) => {
                     const barClass = q.taxa >= 75 ? 'high' : q.taxa >= 40 ? 'medium' : '';
                     return (
                       <tr key={q.quadra_nome}>
@@ -459,7 +471,7 @@ export function AdminRelatorios() {
                     </td>
                   </tr>
                 ) : (
-                  reservas.map((r: any) => (
+                  reservas.map((r) => (
                     <tr key={r.id}>
                       <td>{fmtData(r.data_reserva)}</td>
                       <td style={{ color: 'var(--muted)', fontSize: '12px' }}>#{r.id}</td>
@@ -492,14 +504,14 @@ export function AdminRelatorios() {
 
   const renderInadimplencia = () => {
     if (!dadosAtuais) return null;
-    const { inadimplentes = [], totalDevido = 0 } = dadosAtuais;
+    const { inadimplentes = [], totalDevido = 0, paginacao } = dadosAtuais;
 
     return (
       <>
         <div className="rel-kpi-row">
           <div className="rel-kpi">
             <div className="rel-kpi-label">Devedores</div>
-            <div className="rel-kpi-value red">{inadimplentes.length}</div>
+            <div className="rel-kpi-value red">{paginacao?.total ?? inadimplentes.length}</div>
           </div>
           <div className="rel-kpi">
             <div className="rel-kpi-label">Total a Receber</div>
@@ -510,7 +522,7 @@ export function AdminRelatorios() {
         <div className="table-card">
           <div style={{ padding: 'var(--s-4) var(--s-5)', borderBottom: '1px solid var(--border-passive)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span id="table-title">Relatório de Inadimplência — {fmtData(dataInicio)} a {fmtData(dataFim)}</span>
-            <span id="table-count">{inadimplentes.length} registros</span>
+            <span id="table-count">{inadimplentes.length} de {paginacao?.total ?? inadimplentes.length} registros</span>
           </div>
           <div className="table-wrap">
             <table>
@@ -536,7 +548,7 @@ export function AdminRelatorios() {
                     </td>
                   </tr>
                 ) : (
-                  inadimplentes.map((r: any) => (
+                  inadimplentes.map((r) => (
                     <tr key={r.id}>
                       <td>{fmtData(r.data_reserva)}</td>
                       <td style={{ color: 'var(--muted)', fontSize: '12px' }}>#{r.id}</td>
@@ -614,7 +626,7 @@ export function AdminRelatorios() {
                     </td>
                   </tr>
                 ) : (
-                  cancelamentos.map((r: any) => (
+                  cancelamentos.map((r) => (
                     <tr key={r.id}>
                       <td>{fmtData(r.data_reserva)}</td>
                       <td style={{ color: 'var(--muted)', fontSize: '12px' }}>#{r.id}</td>
@@ -677,7 +689,7 @@ export function AdminRelatorios() {
 
   const renderFormasPagamento = () => {
     if (!dadosAtuais) return null;
-    const { porMetodo = [], transacoes = [], totalGeral = 0 } = dadosAtuais;
+    const { porMetodo = [], transacoes = [], totalGeral = 0, paginacao } = dadosAtuais;
 
     const methodColors = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6'];
 
@@ -704,7 +716,7 @@ export function AdminRelatorios() {
           </div>
           <div className="rel-kpi">
             <div className="rel-kpi-label">Transações</div>
-            <div className="rel-kpi-value">{transacoes.length}</div>
+            <div className="rel-kpi-value">{paginacao?.total ?? transacoes.length}</div>
           </div>
         </div>
 
@@ -712,7 +724,7 @@ export function AdminRelatorios() {
           <p style={{ color: 'var(--muted)', fontSize: '13px', margin: '20px 0' }}>Nenhum pagamento no período.</p>
         ) : (
           <div className="pag-method-grid">
-            {porMetodo.map((m: any, i: number) => (
+            {porMetodo.map((m, i: number) => (
               <div className="pag-method-card" key={m.metodo}>
                 <div className="pag-method-name" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   {renderMethodIcon(m.metodo)}
@@ -737,7 +749,7 @@ export function AdminRelatorios() {
         <div className="table-card" style={{ marginTop: 'var(--s-4)' }}>
           <div style={{ padding: 'var(--s-4) var(--s-5)', borderBottom: '1px solid var(--border-passive)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span id="table-title">Histórico de Transações</span>
-            <span id="table-count">{transacoes.length} registros</span>
+            <span id="table-count">{transacoes.length} de {paginacao?.total ?? transacoes.length} registros</span>
           </div>
           <div className="table-wrap">
             <table>
@@ -760,7 +772,7 @@ export function AdminRelatorios() {
                     </td>
                   </tr>
                 ) : (
-                  transacoes.map((t: any, idx: number) => (
+                  transacoes.map((t, idx: number) => (
                     <tr key={idx}>
                       <td>{fmtData(t.data_pagamento)}</td>
                       <td style={{ color: 'var(--muted)', fontSize: '12px' }}>{t.hora_pagamento || ''}</td>
@@ -788,8 +800,8 @@ export function AdminRelatorios() {
     if (!dadosAtuais) return null;
     const { porHora = [], maxPico = 1, porDiaSemana = [], totalReservas = 0 } = dadosAtuais;
 
-    const peakHourObj = porHora.length > 0 ? porHora.reduce((a: any, b: any) => (a.total > b.total ? a : b)) : null;
-    const bestDayObj = porDiaSemana.length > 0 ? porDiaSemana.reduce((a: any, b: any) => (a.total > b.total ? a : b)) : null;
+    const peakHourObj = porHora.length > 0 ? porHora.reduce((a, b) => (a.total > b.total ? a : b)) : null;
+    const bestDayObj = porDiaSemana.length > 0 ? porDiaSemana.reduce((a, b) => (a.total > b.total ? a : b)) : null;
 
     return (
       <>
@@ -816,7 +828,7 @@ export function AdminRelatorios() {
             {porHora.length === 0 ? (
               <p style={{ color: 'var(--muted)', fontSize: '13px' }}>Sem dados no período.</p>
             ) : (
-              porHora.map((h: any) => {
+              porHora.map((h) => {
                 const pct = Math.round((h.total / maxPico) * 100);
                 const cor = pct >= 80 ? '#ef4444' : pct >= 50 ? '#f59e0b' : '#34d399';
                 return (
@@ -836,8 +848,8 @@ export function AdminRelatorios() {
             {porDiaSemana.length === 0 ? (
               <p style={{ color: 'var(--muted)', fontSize: '13px' }}>Sem dados no período.</p>
             ) : (
-              porDiaSemana.map((d: any) => {
-                const maxDia = Math.max(...porDiaSemana.map((x: any) => x.total), 1);
+              porDiaSemana.map((d) => {
+                const maxDia = Math.max(...porDiaSemana.map((x) => x.total), 1);
                 const pct = Math.round((d.total / maxDia) * 100);
                 return (
                   <div className="dia-row" key={d.dia}>
@@ -858,7 +870,7 @@ export function AdminRelatorios() {
 
   const renderTopClientes = () => {
     if (!dadosAtuais) return null;
-    const { clientes = [], totalFaturado = 0 } = dadosAtuais;
+    const { clientes = [], totalFaturado = 0, paginacao } = dadosAtuais;
 
     const rankIcon = (pos: number) => {
       if (pos === 1) return <span className="client-rank gold">★</span>;
@@ -872,7 +884,7 @@ export function AdminRelatorios() {
         <div className="rel-kpi-row">
           <div className="rel-kpi">
             <div className="rel-kpi-label">Clientes Ativos</div>
-            <div className="rel-kpi-value">{clientes.length}</div>
+            <div className="rel-kpi-value">{paginacao?.total ?? clientes.length}</div>
           </div>
           <div className="rel-kpi">
             <div className="rel-kpi-label">Faturamento Total</div>
@@ -881,7 +893,7 @@ export function AdminRelatorios() {
           <div className="rel-kpi">
             <div className="rel-kpi-label"># 1 em Reservas</div>
             <div className="rel-kpi-value">
-              {clientes.length > 0 ? clientes[0].nome.split(' ')[0] : '—'}
+              {currentPage === 1 && clientes.length > 0 ? clientes[0].nome.split(' ')[0] : '—'}
             </div>
           </div>
         </div>
@@ -896,7 +908,7 @@ export function AdminRelatorios() {
                 Nenhum cliente com reservas no período.
               </p>
             ) : (
-              clientes.map((c: any) => (
+              clientes.map((c) => (
                 <div className="top-client-row" key={c.posicao}>
                   {rankIcon(c.posicao)}
                   <div className="client-info">
@@ -1077,7 +1089,7 @@ export function AdminRelatorios() {
           <button 
             className="btn-primary" 
             style={{ alignSelf: 'flex-end' }} 
-            onClick={() => gerarRelatorio()}
+            onClick={() => { setCurrentPage(1); gerarRelatorio(relAtivo, 1); }}
           >
             Gerar Relatório
           </button>
@@ -1085,7 +1097,7 @@ export function AdminRelatorios() {
 
         {showExportBtn && (
           <div style={{ display: 'flex', gap: 'var(--s-3)' }}>
-            <button className="btn-ghost" onClick={exportarCSV}>↓ CSV</button>
+            <button className="btn-ghost" onClick={exportarCSV}>↓ CSV da página</button>
           </div>
         )}
       </div>
@@ -1094,6 +1106,13 @@ export function AdminRelatorios() {
       <div style={{ marginTop: 'var(--s-4)' }}>
         {renderContent()}
       </div>
+      {!loading && dadosAtuais?.paginacao && (
+        <Pagination
+          page={dadosAtuais.paginacao.pagina}
+          totalPages={dadosAtuais.paginacao.totalPaginas}
+          onPage={changePage}
+        />
+      )}
     </div>
   );
 }

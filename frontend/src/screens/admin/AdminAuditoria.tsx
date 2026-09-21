@@ -1,3 +1,4 @@
+import { useEventCallback } from '../../hooks/useEventCallback';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useEffect, useState, useRef } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
@@ -135,7 +136,7 @@ export function AdminAuditoria() {
     return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()} · ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
   };
 
-  const carregarLogs = async (resetPage = false) => {
+  const carregarLogs = useEventCallback(async (resetPage = false) => {
     setLoading(true);
     const targetPage = resetPage ? 1 : currentPage;
     if (resetPage) {
@@ -181,12 +182,12 @@ export function AdminAuditoria() {
     } finally {
       setLoading(false);
     }
-  };
+  } );
 
   // Load logs triggers
   useEffect(() => {
     carregarLogs(true);
-  }, [evento, dataInicio, dataFim]);
+  }, [evento, dataInicio, dataFim, carregarLogs]);
 
   // Debounced search text trigger
   useEffect(() => {
@@ -195,12 +196,12 @@ export function AdminAuditoria() {
     }, 400);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [busca]);
+  }, [busca, carregarLogs]);
 
   // Manual page change trigger
   useEffect(() => {
     carregarLogs(false);
-  }, [currentPage]);
+  }, [carregarLogs, currentPage]);
 
   const handleExportCSV = async () => {
     setExporting(true);

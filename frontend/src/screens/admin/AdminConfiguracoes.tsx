@@ -1,3 +1,5 @@
+import { useCallback } from 'react';
+import { errorMessage } from '../../utils/errorMessage';
 import { ReauthenticationAction } from '../../components/ReauthenticationAction';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useEffect, useState } from 'react';
@@ -88,7 +90,7 @@ const getDefaultSportPrice = (sportNameOrQuadras: Quadra[] | string, sportNameOp
 };
 
 const formatCurrency = (val: number) => {
-  return 'R$ ' + Number.parseFloat(val as any).toFixed(2).replace('.', ',');
+  return 'R$ ' + Number(val).toFixed(2).replace('.', ',');
 };
 
 const formatCurrencyInput = (value: string) => {
@@ -262,7 +264,7 @@ export function AdminConfiguracoes() {
   };
 
   // --- LOAD DATA ---
-  const loadQuadras = async () => {
+  const loadQuadras = useCallback(async () => {
     setLoadingQuadras(true);
     try {
       const data = await request('/api/quadras');
@@ -271,43 +273,43 @@ export function AdminConfiguracoes() {
         const sportsSet = new Set(OPCOES_MODALIDADES);
         data.forEach((q: Quadra) => {
           if (Array.isArray(q.modalidades)) {
-            q.modalidades.forEach((m: any) => sportsSet.add(typeof m === 'string' ? m : m.nome));
+            q.modalidades.forEach((m) => sportsSet.add(typeof m === 'string' ? m : m.nome));
           }
         });
         setOpcoesModalidades(Array.from(sportsSet));
       }
-    } catch (e: any) {
-      showToast('Erro ao carregar quadras: ' + e.message, 'error');
+    } catch (e) {
+      showToast('Erro ao carregar quadras: ' + errorMessage(e), 'error');
     } finally {
       setLoadingQuadras(false);
     }
-  };
+  }, [] );
 
-  const loadUsuarios = async () => {
+  const loadUsuarios = useCallback(async () => {
     setLoadingUsuarios(true);
     try {
       const data = await request('/api/usuarios');
       setUsuarios(data);
-    } catch (e: any) {
-      showToast('Erro ao carregar usuários: ' + e.message, 'error');
+    } catch (e) {
+      showToast('Erro ao carregar usuários: ' + errorMessage(e), 'error');
     } finally {
       setLoadingUsuarios(false);
     }
-  };
+  }, [] );
 
-  const loadMotivos = async () => {
+  const loadMotivos = useCallback(async () => {
     setLoadingMotivos(true);
     try {
       const data = await request('/api/motivos');
       setMotivos(data);
-    } catch (e: any) {
-      showToast('Erro ao carregar motivos: ' + e.message, 'error');
+    } catch (e) {
+      showToast('Erro ao carregar motivos: ' + errorMessage(e), 'error');
     } finally {
       setLoadingMotivos(false);
     }
-  };
+  }, [] );
 
-  const loadArena = async () => {
+  const loadArena = useCallback(async () => {
     try {
       const data = await request('/api/arenas/minha');
       setArena({
@@ -326,12 +328,12 @@ export function AdminConfiguracoes() {
         cidade_pix: data.cidade_pix || '',
         foto_capa: data.foto_capa || ''
       });
-    } catch (e: any) {
-      showToast('Erro ao carregar dados da arena: ' + e.message, 'error');
+    } catch (e) {
+      showToast('Erro ao carregar dados da arena: ' + errorMessage(e), 'error');
     }
-  };
+  }, [] );
 
-  const loadMaquineta = async () => {
+  const loadMaquineta = useCallback(async () => {
     setLoadingGateway(true);
     try {
       const data = await request('/api/pagamentos/gateway/maquineta');
@@ -345,7 +347,7 @@ export function AdminConfiguracoes() {
     } catch {
       showToast('Não foi possível carregar a configuração de pagamentos. Recarregue a página antes de editar.', 'error');
     }
-  };
+  }, [] );
 
   useEffect(() => {
     const loadPlanoInfo = async () => {
@@ -400,7 +402,7 @@ export function AdminConfiguracoes() {
       handleTabChange('pagamentos');
       showToast('✓ Conta do Mercado Pago conectada com sucesso!', 'success');
     }
-  }, []);
+  }, [loadArena, loadMaquineta, loadMotivos, loadQuadras, loadUsuarios]);
 
   // --- SAVE QUADRA ---
   const handleSaveQuadra = async (e: React.FormEvent) => {
@@ -439,8 +441,8 @@ export function AdminConfiguracoes() {
       }
       setActiveModal(null);
       loadQuadras();
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
@@ -455,8 +457,8 @@ export function AdminConfiguracoes() {
       });
       showToast('Status da quadra atualizado!', 'success');
       loadQuadras();
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
@@ -470,8 +472,8 @@ export function AdminConfiguracoes() {
       showToast(res.message || 'Quadra excluída com sucesso!', 'success');
       setActiveModal(null);
       loadQuadras();
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
@@ -479,7 +481,7 @@ export function AdminConfiguracoes() {
     setNqId(q.id);
     setNqNome(q.nome);
     setNqModalidade(q.tipo);
-    const normalized = (q.modalidades && q.modalidades.length > 0 ? q.modalidades : [q.tipo || 'Beach Tennis']).map((m: any) => {
+    const normalized = (q.modalidades && q.modalidades.length > 0 ? q.modalidades : [q.tipo || 'Beach Tennis']).map((m) => {
       if (typeof m === 'string') return { nome: m, preco: q.preco_base || 80 };
       return { nome: m.nome, preco: Number(m.preco != null ? m.preco : q.preco_base || 80) };
     });
@@ -519,7 +521,7 @@ export function AdminConfiguracoes() {
 
 
     try {
-      const payload: any = { nome: nuNome, email: nuEmail, perfil: nuPerfil };
+      const payload = { nome: nuNome, email: nuEmail, perfil: nuPerfil };
 
 
       if (nuId) {
@@ -550,8 +552,8 @@ export function AdminConfiguracoes() {
       }
       setActiveModal(null);
       loadUsuarios();
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
@@ -565,8 +567,8 @@ export function AdminConfiguracoes() {
       showToast('Usuário excluído com sucesso!', 'success');
       setActiveModal(null);
       loadUsuarios();
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
@@ -611,8 +613,8 @@ export function AdminConfiguracoes() {
         showToast('Configurações salvas com sucesso!', 'success');
       }
       loadArena();
-    } catch (err: any) {
-      showToast('Erro ao salvar: ' + err.message, 'error');
+    } catch (err) {
+      showToast('Erro ao salvar: ' + errorMessage(err), 'error');
     }
   };
 
@@ -636,8 +638,8 @@ export function AdminConfiguracoes() {
       setActiveModal(null);
       setNmNome('');
       loadMotivos();
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
@@ -650,8 +652,8 @@ export function AdminConfiguracoes() {
       });
       showToast('Motivo removido com sucesso!', 'success');
       loadMotivos();
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
@@ -765,7 +767,7 @@ export function AdminConfiguracoes() {
                             <span style={{ fontWeight: 600 }}>{q.tipo}</span>
                             {q.modalidades && q.modalidades.length > 0 && (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                                {q.modalidades.map((m: any) => {
+                                {q.modalidades.map((m) => {
                                   const name = typeof m === 'string' ? m : m.nome;
                                   const price = typeof m === 'string' ? q.preco_base : (m.preco != null ? m.preco : q.preco_base);
                                   return (
@@ -1085,8 +1087,8 @@ export function AdminConfiguracoes() {
                       if (data.url) {
                         window.location.href = data.url;
                       }
-                    } catch (e: any) {
-                      setToast({ message: e.message || 'Erro ao iniciar conexão automática.', type: 'error' });
+                    } catch (e) {
+                      setToast({ message: errorMessage(e) || 'Erro ao iniciar conexão automática.', type: 'error' });
                     }
                   }}
                 >
@@ -1345,8 +1347,8 @@ export function AdminConfiguracoes() {
                           setArena(prev => ({ ...prev, foto_capa: res.foto_capa }));
                           showToast('✓ Imagem do dispositivo enviada com sucesso!', 'success');
                         }
-                      } catch (err: any) {
-                        showToast('Erro ao enviar imagem: ' + err.message, 'error');
+                      } catch (err) {
+                        showToast('Erro ao enviar imagem: ' + errorMessage(err), 'error');
                       } finally {
                         setUploadingImage(false);
                       }

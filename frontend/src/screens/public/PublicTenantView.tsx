@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
@@ -103,7 +104,7 @@ export function PublicTenantView() {
   }, [slug]);
 
   // 2. Carregar Disponibilidade por Data
-  const fetchDisponibilidade = async () => {
+  const fetchDisponibilidade = useCallback(async () => {
     if (!slug || notFound || blockedMsg) return;
     setLoadingDisponibilidade(true);
     try {
@@ -118,11 +119,11 @@ export function PublicTenantView() {
     } finally {
       setLoadingDisponibilidade(false);
     }
-  };
+  }, [slug, selDate, selQuadraId, notFound, blockedMsg] );
 
   useEffect(() => {
     fetchDisponibilidade();
-  }, [slug, selDate, selQuadraId, notFound, blockedMsg]);
+  }, [slug, selDate, selQuadraId, notFound, blockedMsg, fetchDisponibilidade]);
 
   // Timer regressivo do Pix (15 min)
   useEffect(() => {

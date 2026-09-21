@@ -1,8 +1,9 @@
+import { useCallback } from 'react';
 import { ReauthenticationAction } from '../components/ReauthenticationAction';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Wrench, Eye, EyeOff, ShieldCheck } from 'lucide-react';
-import { Badge, Button, ConfirmModal } from '../components/ui';
+import { Badge, ConfirmModal } from '../components/ui';
 import { SYSTEM_VERSION } from '../data/mock';
 import '../assets/css/configuracoes.css';
 
@@ -530,7 +531,7 @@ export function MasterConfiguracoes() {
     sessionStorage.setItem('master_config_tab', id);
   };
 
-  const fetchConfigs = async () => {
+  const fetchConfigs = useCallback(async () => {
     try {
       const res = await fetch('/api/saas/configuracoes', {
         headers: {}
@@ -559,9 +560,9 @@ export function MasterConfiguracoes() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [] );
 
-  useEffect(() => { fetchConfigs(); }, []);
+  useEffect(() => { fetchConfigs(); }, [fetchConfigs]);
 
   const handleSave = async (updatedMaintenance?: boolean) => {
     setSaving(true);

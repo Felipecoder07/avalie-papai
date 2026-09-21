@@ -1,3 +1,5 @@
+import { useCallback } from 'react';
+import type { ArenaDetails, ArenaStaff, ArenaLog, SaaSPlan, SaaSInvoice } from '../types/api';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -16,7 +18,7 @@ const TABS: { id: Tab; label: string; icon: typeof FileText }[] = [
 ];
 
 interface ArenaTabDadosProps {
-  arena: any;
+  arena: ArenaDetails;
   nome: string;
   setNome: (v: string) => void;
   email: string;
@@ -29,7 +31,7 @@ interface ArenaTabDadosProps {
   setPlanoId: (v: number) => void;
   diaVencimento: number;
   setDiaVencimento: (v: number) => void;
-  planosSaaS: any[];
+  planosSaaS: SaaSPlan[];
   editing: boolean;
   setEditing: (v: boolean) => void;
   adminResponsavel: string;
@@ -90,8 +92,8 @@ const ArenaTabDados: React.FC<ArenaTabDadosProps> = ({
 };
 
 interface ArenaTabFinanceiroProps {
-  arena: any;
-  faturas: any[];
+  arena: ArenaDetails;
+  faturas: SaaSInvoice[];
 }
 
 const ArenaTabFinanceiro: React.FC<ArenaTabFinanceiroProps> = ({ arena, faturas }) => {
@@ -121,7 +123,7 @@ const ArenaTabFinanceiro: React.FC<ArenaTabFinanceiroProps> = ({ arena, faturas 
                   <td className="px-5 py-3 font-mono text-xs text-muted">#{inv.id}</td>
                   <td className="px-5 py-3 tabular">{inv.plano_nome}</td>
                   <td className="px-5 py-3 font-medium tabular">{formatBRL(inv.valor)}</td>
-                  <td className="px-5 py-3"><Badge status={finSt as any}>{inv.status}</Badge></td>
+                  <td className="px-5 py-3"><Badge status={finSt}>{inv.status}</Badge></td>
                   <td className="px-5 py-3 text-muted tabular">{formatDate(inv.data_vencimento)}</td>
                   <td className="px-5 py-3 text-muted tabular">{inv.data_pagamento ? formatDate(inv.data_pagamento) : '—'}</td>
                 </tr>
@@ -135,7 +137,7 @@ const ArenaTabFinanceiro: React.FC<ArenaTabFinanceiroProps> = ({ arena, faturas 
 };
 
 interface ArenaTabUsuariosProps {
-  usuarios?: any[];
+  usuarios?: ArenaStaff[];
 }
 
 const ArenaTabUsuarios: React.FC<ArenaTabUsuariosProps> = ({ usuarios }) => {
@@ -153,7 +155,7 @@ const ArenaTabUsuarios: React.FC<ArenaTabUsuariosProps> = ({ usuarios }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-border-passive">
-            {usuarios.map((u: any) => (
+            {usuarios.map((u) => (
               <tr key={u.id} className="hover:bg-cream/50 transition-colors">
                 <td className="px-5 py-3 font-medium text-charcoal">{u.name}</td>
                 <td className="px-5 py-3 text-muted">{u.email}</td>
@@ -170,7 +172,7 @@ const ArenaTabUsuarios: React.FC<ArenaTabUsuariosProps> = ({ usuarios }) => {
 };
 
 interface ArenaTabLogsProps {
-  logs?: any[];
+  logs?: ArenaLog[];
 }
 
 const ArenaTabLogs: React.FC<ArenaTabLogsProps> = ({ logs }) => {
@@ -179,7 +181,7 @@ const ArenaTabLogs: React.FC<ArenaTabLogsProps> = ({ logs }) => {
       <h3 className="text-sm font-semibold mb-4">Últimos acessos e ações nesta arena</h3>
       {(!logs || logs.length === 0) ? <EmptyState message="Nenhum log registrado para esta arena." /> : (
         <ol className="relative border-l border-border-passive ml-2 space-y-4">
-          {logs.map((l: any) => (
+          {logs.map((l) => (
             <li key={l.id} className="pl-4">
               <span className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-charcoal/40 border-2 border-cream" />
               <div className="flex items-center justify-between gap-2">
@@ -199,9 +201,9 @@ export function MasterArenaDetalhe({ onNavigate }: Readonly<Props>) {
   const [searchParams] = useSearchParams();
   const arenaId = searchParams.get('id');
 
-  const [arena, setArena] = useState<any | null>(null);
-  const [faturas, setFaturas] = useState<any[]>([]);
-  const [planosSaaS, setPlanosSaaS] = useState<any[]>([]);
+  const [arena, setArena] = useState<ArenaDetails | null>(null);
+  const [faturas, setFaturas] = useState<SaaSInvoice[]>([]);
+  const [planosSaaS, setPlanosSaaS] = useState<SaaSPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('dados');
   const [blockOpen, setBlockOpen] = useState(false);
@@ -216,7 +218,7 @@ export function MasterArenaDetalhe({ onNavigate }: Readonly<Props>) {
   const [planoId, setPlanoId] = useState<number>(1);
   const [diaVencimento, setDiaVencimento] = useState<number>(10);
 
-  const fetchArenaDetails = async () => {
+  const fetchArenaDetails = useCallback(async () => {
     if (!arenaId) return;
     try {
       setLoading(true);
@@ -256,11 +258,11 @@ export function MasterArenaDetalhe({ onNavigate }: Readonly<Props>) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [arenaId] );
 
   useEffect(() => {
     fetchArenaDetails();
-  }, [arenaId]);
+  }, [arenaId, fetchArenaDetails]);
 
   if (loading) {
     return <div className="p-8 text-center text-charcoal animate-pulse">Carregando detalhes da arena...</div>;
@@ -383,7 +385,7 @@ export function MasterArenaDetalhe({ onNavigate }: Readonly<Props>) {
 
   // Get Admin Responsável from the administradores list returned by API
   const adminResponsavel = arena.administradores && arena.administradores.length > 0 
-    ? arena.administradores[0].nome 
+    ? arena.administradores[0].name
     : 'Nenhum administrador associado';
 
   return (
@@ -397,7 +399,7 @@ export function MasterArenaDetalhe({ onNavigate }: Readonly<Props>) {
         description={`Cadastrada em ${formatDate(arena.criado_em)}`}
         actions={
           <>
-            <Badge status={statusBadgeType as any}>{statusLabel}</Badge>
+            <Badge status={statusBadgeType}>{statusLabel}</Badge>
             <Badge status="neutral">Plano {arena.plano_nome || 'Basic'}</Badge>
             {arena.gateway_conectado ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#dcfce7', color: '#15803d', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>

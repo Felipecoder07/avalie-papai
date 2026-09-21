@@ -1,3 +1,4 @@
+import { errorMessage } from '../../utils/errorMessage';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -110,7 +111,7 @@ export function Checkout() {
     plano: '2'
   });
 
-  const [planosPublicos, setPlanosPublicos] = useState<any[]>(DEFAULT_PLANOS);
+  const [planosPublicos, setPlanosPublicos] = useState(DEFAULT_PLANOS);
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
   const [errorMsg, setErrorMsg] = useState('');
@@ -173,8 +174,8 @@ export function Checkout() {
 
     try {
       await performRegistrationAndLogin(formData, navigate);
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Erro de conexão com o servidor.');
+    } catch (err) {
+      setErrorMsg(errorMessage(err) || 'Erro de conexão com o servidor.');
       setShake(true);
       setTimeout(() => setShake(false), 500);
     } finally {

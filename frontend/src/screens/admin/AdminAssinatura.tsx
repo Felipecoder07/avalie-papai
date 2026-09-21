@@ -1,3 +1,5 @@
+import { useCallback } from 'react';
+import { errorMessage } from '../../utils/errorMessage';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import React, { useState, useEffect } from 'react';
 import QRCode from 'react-qr-code';
@@ -324,7 +326,6 @@ const DEFAULT_PLANOS: PlanoItem[] = [
 ];
 
 export function AdminAssinatura() {
-  const token = localStorage.getItem('courtmanager_token');
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -359,16 +360,16 @@ export function AdminAssinatura() {
   };
 
   // Carregar dados de Assinatura e Faturas
-  const carregarDados = async () => {
+  const carregarDados = useCallback(async () => {
     setLoading(true);
     setErro(null);
     try {
       const [resPlano, resFaturas] = await Promise.all([
         fetch('/api/tenant/assinatura/plano', {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: {  }
         }),
         fetch('/api/tenant/assinatura/faturas', {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: {  }
         })
       ]);
 
@@ -386,16 +387,16 @@ export function AdminAssinatura() {
 
       setDados(dataPlano);
       setFaturas(dataFaturas);
-    } catch (e: any) {
-      setErro(e.message || 'Falha ao conectar com o servidor.');
+    } catch (e) {
+      setErro(errorMessage(e) || 'Falha ao conectar com o servidor.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [] );
 
   useEffect(() => {
     carregarDados();
-  }, []);
+  }, [carregarDados]);
 
   // Polling automático do Pix (a cada 4s quando o modal Pix estiver aberto)
   useEffect(() => {
@@ -418,7 +419,7 @@ export function AdminAssinatura() {
 
       try {
         const res = await fetch(`/api/tenant/assinatura/status-pagamento/${pixData.gateway_ref}`, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: {  }
         });
         if (res.ok) {
           const statusJson = await res.json();
@@ -434,7 +435,7 @@ export function AdminAssinatura() {
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [modalPixOpen, pixData, pixPagoComSucesso, pixExpirado]);
+  }, [modalPixOpen, pixData, pixPagoComSucesso, pixExpirado, carregarDados]);
 
   // Ação: Abrir modal de seleção de planos
   const abrirModalPlanos = async () => {
@@ -443,7 +444,7 @@ export function AdminAssinatura() {
       setLoadingPlanos(true);
       try {
         const res = await fetch('/api/tenant/assinatura/planos-disponiveis', {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: {  }
         });
         if (res.ok) {
           const data = await res.json();
@@ -465,7 +466,7 @@ export function AdminAssinatura() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
+
         },
         body: JSON.stringify({ plano_id: planoId, ciclo: cicloEscolhido })
       });
@@ -494,8 +495,8 @@ export function AdminAssinatura() {
       setPixCopiado(false);
       setPixExpirado(false);
       showToast(`Cobrança Pix gerada para o Plano ${resData.plano_nome} (${resData.ciclo === 'anual' ? 'Anual' : 'Mensal'}). Realize o pagamento para ativar!`, 'info');
-    } catch (err: any) {
-      showToast(err.message || 'Erro ao processar upgrade de plano.', 'error');
+    } catch (err) {
+      showToast(errorMessage(err) || 'Erro ao processar upgrade de plano.', 'error');
     } finally {
       setSolicitandoUpgradeId(null);
     }
@@ -508,15 +509,15 @@ export function AdminAssinatura() {
     setReciboSelecionado(null);
     try {
       const res = await fetch(`/api/tenant/assinatura/faturas/${faturaId}/recibo`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {  }
       });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Erro ao carregar recibo.');
       }
       setReciboSelecionado(data);
-    } catch (err: any) {
-      showToast(err.message || 'Erro ao buscar recibo.', 'error');
+    } catch (err) {
+      showToast(errorMessage(err) || 'Erro ao buscar recibo.', 'error');
       setModalReciboOpen(false);
     } finally {
       setCarregandoRecibo(false);
@@ -745,15 +746,15 @@ export function AdminAssinatura() {
     try {
       const res = await fetch(`/api/tenant/assinatura/faturas/${fatura.id}/gerar-pix`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {  }
       });
 
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Erro ao gerar Pix.');
 
       setPixData(json);
-    } catch (err: any) {
-      showToast(err.message || 'Não foi possível gerar a cobrança Pix.', 'error');
+    } catch (err) {
+      showToast(errorMessage(err) || 'Não foi possível gerar a cobrança Pix.', 'error');
       setModalPixOpen(false);
     } finally {
       setGerandoPix(false);
@@ -777,7 +778,7 @@ export function AdminAssinatura() {
     try {
       const res = await fetch('/api/tenant/assinatura/adiantar-fatura', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {  }
       });
       const resData = await res.json();
       if (!res.ok) {
@@ -804,8 +805,8 @@ export function AdminAssinatura() {
       showToast(`Cobrança Pix da próxima mensalidade gerada com sucesso!`, 'info');
       // Recarregar dados para refletir a nova fatura na tabela
       carregarDados();
-    } catch (err: any) {
-      showToast(err.message || 'Erro ao adiantar mensalidade.', 'error');
+    } catch (err) {
+      showToast(errorMessage(err) || 'Erro ao adiantar mensalidade.', 'error');
     } finally {
       setAdiantandoMensalidade(false);
     }
@@ -1625,7 +1626,7 @@ export function AdminAssinatura() {
                         try {
                           const refToUse = pixData.gateway_ref || faturaSelecionada?.id;
                           const res = await fetch(`/api/tenant/assinatura/status-pagamento/${refToUse}`, {
-                            headers: { Authorization: `Bearer ${token}` }
+                            headers: {  }
                           });
                           const json = await res.json();
                           if (json.pago) {
@@ -1661,7 +1662,7 @@ export function AdminAssinatura() {
                         try {
                           const res = await fetch(`/api/tenant/assinatura/faturas/${faturaSelecionada.id}/simular-pagamento`, {
                             method: 'POST',
-                            headers: { Authorization: `Bearer ${token}` }
+                            headers: {  }
                           });
                           const json = await res.json();
                           if (res.ok) {

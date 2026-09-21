@@ -1,9 +1,10 @@
+import type { Announcement } from '../types/api';
 import { ChangePassword } from './ChangePassword';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { Menu, Bell, ChevronRight, X, Globe, Copy, ExternalLink, Share2, Check } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
-import { NAV_ITEMS } from './AdminSidebar';
+import { ADMIN_NAV_ITEMS as NAV_ITEMS } from './navigation';
 import { safeStorage } from '../utils/safeStorage';
 
 interface AdminTopbarProps {
@@ -16,7 +17,7 @@ export function AdminTopbar({ onToggleSidebar }: Readonly<AdminTopbarProps>) {
 
   const [arenaName, setArenaName] = useState(() => safeStorage.getItem('arena_nome') || 'Arena Principal');
   const [arenaSlug, setArenaSlug] = useState(() => safeStorage.getItem('arena_slug') || 'felp-arena');
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<Announcement[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showPortalMenu, setShowPortalMenu] = useState(false);
   const [copied, setCopied] = useState(false);

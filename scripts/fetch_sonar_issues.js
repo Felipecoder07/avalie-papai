@@ -5,7 +5,7 @@ if (dns.setDefaultResultOrder) {
 }
 
 async function fetchAll() {
-  const projectKey = 'Felipecoder07_Arenix';
+  const projectKey = 'Felipecoder07_avalie-papai';
   let page = 1;
   const pageSize = 100;
   let allIssues = [];

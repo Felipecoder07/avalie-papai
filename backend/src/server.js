@@ -1,7 +1,8 @@
 const path = require("node:path");
 const fs = require("node:fs");
 require('dotenv').config();
-require('./utils/security').validateEnvironment();
+require('./config/envValidation').validateEnvironment();
+if (process.env.NODE_ENV === 'production') process.umask(0o077);
 const app = require('./app');
 const initDb = require('./config/init_db');
 
@@ -11,13 +12,10 @@ const initDb = require('./config/init_db');
 initDb();
 
 const { startSaaSCron } = require('./jobs/cronSaaS');
-const { validateEnvironment } = require('./config/envValidation');
 startSaaSCron();
 
 const PORT = process.env.PORT || 3000;
 
-// Validação Fail-fast de ambiente antes de inicializar o servidor
-validateEnvironment();
 
 // SPA Fallback - redireciona qualquer rota de página para o index.html do React
 app.use((req, res, next) => {
@@ -31,8 +29,7 @@ app.use((req, res, next) => {
 });
 
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor iniciado na porta ${PORT} (0.0.0.0)`);
+const HOST = process.env.LISTEN_HOST || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0');
+app.listen(PORT, HOST, () => {
+  console.log(`Servidor iniciado na porta ${PORT} (${HOST})`);
 });
-
-

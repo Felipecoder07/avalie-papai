@@ -35,24 +35,13 @@ function validateEnvironment() {
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32 || /seu_jwt|secret-jwt|example/i.test(process.env.JWT_SECRET)) throw new Error('Configure JWT_SECRET forte antes de iniciar produção.');
   frontendUrl();
   if (!process.env.CORS_ALLOWED_ORIGINS) throw new Error('Configure CORS_ALLOWED_ORIGINS em produção.');
-  if (!/^[a-f0-9]{64}$/i.test(process.env.SECRETS_ENCRYPTION_KEY || '')) throw new Error('Configure SECRETS_ENCRYPTION_KEY (32 bytes em hexadecimal).');
+  require('./secretEncryption').loadKeys({ requireActive: true });
+  require('../config/proxy').validateProxyEnvironment();
+  for (const origin of process.env.CORS_ALLOWED_ORIGINS.split(',').map(value => value.trim())) {
+    const url = new URL(origin);
+    if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password) throw new Error('CORS_ALLOWED_ORIGINS exige origens HTTPS exatas.');
+  }
 }
-function encrypt(value) {
-  if (!value || String(value).startsWith('enc:v1:')) return value;
-  const key = process.env.SECRETS_ENCRYPTION_KEY;
-  if (!key && !production()) return value;
-  if (!/^[a-f0-9]{64}$/i.test(key || '')) throw httpError(503, 'Chave de proteção das integrações não configurada.');
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(key, 'hex'), iv);
-  const data = Buffer.concat([cipher.update(String(value), 'utf8'), cipher.final()]);
-  return ['enc', 'v1', iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), data.toString('base64url')].join(':');
-}
-function decrypt(value) {
-  if (!value || !String(value).startsWith('enc:v1:')) return value;
-  const [, , iv, tag, data] = value.split(':');
-  const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(process.env.SECRETS_ENCRYPTION_KEY || '', 'hex'), Buffer.from(iv, 'base64url'));
-  decipher.setAuthTag(Buffer.from(tag, 'base64url'));
-  return Buffer.concat([decipher.update(Buffer.from(data, 'base64url')), decipher.final()]).toString('utf8');
-}
+const { encrypt, decrypt } = require('./secretEncryption');
 const simulationAllowed = () => process.env.NODE_ENV === 'test';
 module.exports = { production, hash, secret, httpError, publicError, passwordError, cents, frontendUrl, validateEnvironment, encrypt, decrypt, simulationAllowed };

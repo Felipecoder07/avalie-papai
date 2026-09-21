@@ -1,8 +1,9 @@
+import { errorMessage } from '../../utils/errorMessage';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ShieldCheck, Lock, ArrowLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
-import { Card, Button, Input, Field } from '../../components/ui';
+import { Lock, Eye, EyeOff } from 'lucide-react';
+import { Input, Field } from '../../components/ui';
 
 export function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -55,8 +56,8 @@ export function ResetPassword() {
       if (!res.ok) throw new Error(d.error || 'Erro ao redefinir a senha.');
 
       setSubmitted(true);
-    } catch (err: any) {
-      setErrorMsg(err.message);
+    } catch (err) {
+      setErrorMsg(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -98,7 +99,7 @@ export function ResetPassword() {
                     type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
-                    onChange={(e: any) => { setPassword(e.target.value); setErrorMsg(''); }}
+                    onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); }}
                     placeholder="••••••••"
                     style={{ paddingLeft: '2.5rem', paddingRight: '2.5rem' }}
                   />
@@ -121,7 +122,7 @@ export function ResetPassword() {
                     type={showConfirmPassword ? 'text' : 'password'}
                     required
                     value={confirmPassword}
-                    onChange={(e: any) => { setConfirmPassword(e.target.value); setErrorMsg(''); }}
+                    onChange={(e) => { setConfirmPassword(e.target.value); setErrorMsg(''); }}
                     placeholder="••••••••"
                     style={{ paddingLeft: '2.5rem', paddingRight: '2.5rem' }}
                   />

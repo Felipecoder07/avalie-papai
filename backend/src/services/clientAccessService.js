@@ -20,12 +20,15 @@ async function membership(user, tenantId, create = false) {
   return db.getAsync('SELECT c.id,c.tenant_id,c.nome,c.email,c.telefone,c.cpf,c.avatar_url,c.ativo FROM ClientMemberships m JOIN Clientes c ON c.id=m.cliente_id AND c.tenant_id=m.tenant_id WHERE m.usuario_id=? AND m.tenant_id=? AND m.verified=1', [user.id, tenantId]);
   });
 }
-async function createGuestAccess(tenantId, grupoId, res) {
+async function createGuestAccess(tenantId, grupoId) {
   await ensureSecuritySchema(db);
   const token = secret();
   await db.runAsync('INSERT INTO GuestAccess(token_hash,tenant_id,grupo_id,expires) VALUES(?,?,?,?)', [hash(token), tenantId, grupoId, Date.now()+86400000]);
-  res.cookie('cm_guest', token, { httpOnly: true, secure: production(), sameSite: 'lax', path: '/', maxAge: 86400000 });
-  res.cookie('cm_guest_csrf', hash(token + ':csrf'), { secure: production(), sameSite: 'lax', path: '/', maxAge: 86400000 });
+  return { token, csrf: hash(token + ':csrf'), maxAge: 86400000 };
+}
+function setGuestCookies(res, access) {
+  res.cookie('cm_guest', access.token, { httpOnly: true, secure: production(), sameSite: 'lax', path: '/', maxAge: access.maxAge });
+  res.cookie('cm_guest_csrf', access.csrf, { httpOnly: false, secure: production(), sameSite: 'lax', path: '/', maxAge: access.maxAge });
 }
 async function canAccessReservation(req, reserva) {
   await ensureSecuritySchema(db);
@@ -60,4 +63,4 @@ async function requireReservationAccess(req, res, next) {
     next();
   } catch (err) { res.status(err.status || 503).json({ error: require('../utils/security').publicError(err, 'Não foi possível validar o acesso.') }); }
 }
-module.exports = { membership, ownsReservation, createGuestAccess, canAccessReservation, requireReservationAccess };
+module.exports = { membership, ownsReservation, createGuestAccess, setGuestCookies, canAccessReservation, requireReservationAccess };

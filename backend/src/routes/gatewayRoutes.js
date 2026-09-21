@@ -12,7 +12,7 @@ const {
   validateAndConsumeOAuthState,
   validateAndConsumeOAuthCode
 } = require('../utils/oauthState');
-const { criarCobrancaPix, criarCobrancaCartao, criarCobrancaMaquineta, processarLiquidacao, resolverContextoWebhookMercadoPago, liquidarWebhookMercadoPago } = require('../services/gatewayService');
+const { criarCobrancaPix, criarCobrancaCartao, criarCobrancaMaquineta, processarLiquidacao, consultarContaGateway, resolverContextoWebhookMercadoPago, liquidarWebhookMercadoPago } = require('../services/gatewayService');
 
 // Criar cobrança para uma reserva (Pix, Cartão ou Maquineta)
 async function validarReservaECalcularValorCobrar(reserva_id, user, valorParam) {
@@ -185,21 +185,26 @@ router.post('/maquineta', verifyToken, requireGatewayManager, async (req, res) =
       return res.status(400).json({ error: 'Formato de Serial Number de maquineta inválido. Use letras, números, hífen e underline (4-64 caracteres).' });
     }
 
+    const accessToken = gateway_access_token?.trim() || null;
+    const gatewayUserId = accessToken ? await consultarContaGateway(accessToken) : null;
+
     await db.runAsync(
       `UPDATE Arenas SET
         gateway_device_id = CASE WHEN ? THEN ? ELSE gateway_device_id END,
         gateway_access_token = COALESCE(?, gateway_access_token),
-        gateway_public_key = CASE WHEN ? THEN ? ELSE gateway_public_key END
+        gateway_public_key = CASE WHEN ? THEN ? ELSE gateway_public_key END,
+        gateway_user_id = CASE WHEN ? THEN ? ELSE gateway_user_id END
        WHERE id = ?`,
       [gateway_device_id !== undefined, gateway_device_id?.trim() || null,
-        gateway_access_token?.trim() ? encrypt(gateway_access_token.trim()) : null,
-        gateway_public_key !== undefined, gateway_public_key?.trim() || null, req.user.tenant_id]
+        accessToken ? encrypt(accessToken) : null,
+        gateway_public_key !== undefined, gateway_public_key?.trim() || null,
+        Boolean(accessToken), gatewayUserId, req.user.tenant_id]
     );
 
     res.json({ message: 'Configuração da maquineta física atualizada com sucesso.' });
   } catch (error) {
     logger.error('[Gateway Maquineta Config Error]', error);
-    res.status(500).json({ error: 'Erro ao configurar dispositivo.' });
+    res.status(error.status || 500).json({ error: require('../utils/security').publicError(error, 'Erro ao configurar dispositivo.') });
   }
 });
 

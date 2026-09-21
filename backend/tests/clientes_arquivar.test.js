@@ -92,4 +92,32 @@ describe('Testes de Integração — Arquivamento de Clientes (Soft Delete)', ()
     const reativado = resList.body.find(c => c.id === clienteId);
     expect(reativado).toBeDefined();
   });
+
+  test('7. Deve listar e aprovar um vinculo legado pendente', async () => {
+    await db.runAsync("UPDATE ClientMemberships SET verified = 0, created_at = '2026-09-20 12:00:00' WHERE usuario_id = 3 AND tenant_id = 1 AND cliente_id = 2");
+
+    const list = await auth(request(app).get('/api/clientes/vinculos-pendentes'), session);
+    expect(list.status).toBe(200);
+    expect(list.body).toEqual([
+      expect.objectContaining({
+        usuario_id: 3,
+        cliente_id: 2,
+        created_at: '2026-09-20 12:00:00',
+        cliente_nome: 'Third'
+      })
+    ]);
+
+    const approval = await auth(request(app).post('/api/clientes/vinculos-pendentes/3/2/aprovar'), session);
+    expect(approval.status).toBe(200);
+    expect(await db.getAsync('SELECT verified FROM ClientMemberships WHERE usuario_id = 3 AND tenant_id = 1')).toEqual({ verified: 1 });
+  });
+
+  test('8. Deve rejeitar somente o vinculo pendente da propria arena', async () => {
+    await db.runAsync("UPDATE ClientMemberships SET verified = 0 WHERE usuario_id = 3 AND tenant_id = 1 AND cliente_id = 2");
+
+    const rejection = await auth(request(app).post('/api/clientes/vinculos-pendentes/3/2/rejeitar'), session);
+    expect(rejection.status).toBe(200);
+    expect(await db.getAsync('SELECT 1 FROM ClientMemberships WHERE usuario_id = 3 AND tenant_id = 1')).toBeUndefined();
+    expect(await db.getAsync('SELECT verified FROM ClientMemberships WHERE usuario_id = 8 AND tenant_id = 2')).toEqual({ verified: 1 });
+  });
 });

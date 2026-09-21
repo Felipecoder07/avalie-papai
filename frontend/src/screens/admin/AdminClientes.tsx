@@ -1,3 +1,5 @@
+import { useCallback } from 'react';
+import { errorMessage } from '../../utils/errorMessage';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import React, { useState, useEffect } from 'react';
 import '../../assets/css/pagamentos.css';
@@ -328,7 +330,6 @@ const ModalDetalheCliente: React.FC<ModalDetalheClienteProps> = ({
 };
 
 export function AdminClientes() {
-  const token = localStorage.getItem('courtmanager_token');
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [busca, setBusca] = useState('');
   const [loading, setLoading] = useState(true);
@@ -362,15 +363,12 @@ export function AdminClientes() {
   };
 
   // Carregar Clientes da API (filtra por aba ativa)
-  const carregarClientes = async (aba?: 'ativos' | 'arquivados') => {
-    if (!token) return;
+  const carregarClientes = useCallback(async (aba?: 'ativos' | 'arquivados') => {
     setLoading(true);
     const abaParaCarregar = aba ?? abaAtiva;
     const ativo = abaParaCarregar === 'ativos' ? 1 : 0;
     try {
-      const res = await fetch(`/api/clientes?ativo=${ativo}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await fetch(`/api/clientes?ativo=${ativo}`);
       if (res.ok) {
         const data = await res.json();
         setClientes(data);
@@ -381,7 +379,7 @@ export function AdminClientes() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [abaAtiva] );
 
   const carregarVinculosPendentes = async () => {
     try {
@@ -398,7 +396,7 @@ export function AdminClientes() {
   useEffect(() => {
     carregarClientes(abaAtiva);
     carregarVinculosPendentes();
-  }, [abaAtiva]);
+  }, [abaAtiva, carregarClientes]);
 
   const handleAprovarVinculo = async (usuario_id: number, cliente_id: number) => {
     try {
@@ -409,7 +407,7 @@ export function AdminClientes() {
       if (!res.ok) throw new Error('Erro ao aprovar vínculo');
       showToast('Vínculo aprovado com sucesso!', 'success');
       carregarVinculosPendentes();
-    } catch (err) {
+    } catch {
       showToast('Erro ao aprovar vínculo', 'error');
     }
   };
@@ -423,14 +421,14 @@ export function AdminClientes() {
       if (!res.ok) throw new Error('Erro ao rejeitar vínculo');
       showToast('Vínculo rejeitado!', 'success');
       carregarVinculosPendentes();
-    } catch (err) {
+    } catch {
       showToast('Erro ao rejeitar vínculo', 'error');
     }
   };
 
   // Carregar Detalhes do Cliente
   useEffect(() => {
-    if (!selectedClienteId || !token) {
+    if (!selectedClienteId) {
       setClienteDetalhe(null);
       return;
     }
@@ -438,9 +436,7 @@ export function AdminClientes() {
     const fetchDetalhe = async () => {
       setLoadingDetalhe(true);
       try {
-        const res = await fetch(`/api/clientes/${selectedClienteId}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const res = await fetch(`/api/clientes/${selectedClienteId}`);
         if (res.ok) {
           const data = await res.json();
           setClienteDetalhe(data);
@@ -456,14 +452,14 @@ export function AdminClientes() {
     };
 
     fetchDetalhe();
-  }, [selectedClienteId, token]);
+  }, [selectedClienteId]);
 
   // Submit Criar/Editar Cliente
   const handleSalvarCliente = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs = validarCamposCliente(ncNome, ncTelefone, ncEmail);
     setErrors(errs);
-    if (Object.keys(errs).length > 0 || !token) return;
+    if (Object.keys(errs).length > 0) return;
 
     try {
       const method = modoEdicao ? 'PUT' : 'POST';
@@ -474,8 +470,7 @@ export function AdminClientes() {
       const res = await fetch(url, {
         method,
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           nome: ncNome.trim(),
@@ -506,12 +501,11 @@ export function AdminClientes() {
 
   // Arquivar Cliente (soft delete)
   const handleArquivarCliente = async () => {
-    if (!clienteDetalhe || !token) return;
+    if (!clienteDetalhe) return;
     if (!window.confirm(`Arquivar "${clienteDetalhe.nome}"? O cliente ficará oculto da lista principal, mas o histórico de reservas será preservado.`)) return;
     try {
       const res = await fetch(`/api/clientes/${clienteDetalhe.id}/arquivar`, {
-        method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}` }
+        method: 'PATCH'
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao arquivar');
@@ -519,18 +513,17 @@ export function AdminClientes() {
       setActiveModal(null);
       setSelectedClienteId(null);
       carregarClientes();
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
   // Desarquivar Cliente
   const handleDesarquivarCliente = async () => {
-    if (!clienteDetalhe || !token) return;
+    if (!clienteDetalhe) return;
     try {
       const res = await fetch(`/api/clientes/${clienteDetalhe.id}/desarquivar`, {
-        method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}` }
+        method: 'PATCH'
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao reativar');
@@ -538,14 +531,14 @@ export function AdminClientes() {
       setActiveModal(null);
       setSelectedClienteId(null);
       carregarClientes();
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
     }
   };
 
   // Excluir Cliente (apenas sem histórico)
   const handleExcluirCliente = async () => {
-    if (!clienteDetalhe || !token) return;
+    if (!clienteDetalhe) return;
     
     if (clienteDetalhe.reservasCount && clienteDetalhe.reservasCount > 0) {
       showToast('Cliente com histórico não pode ser excluído. Use "Arquivar".', 'warning');
@@ -555,8 +548,7 @@ export function AdminClientes() {
     if (window.confirm(`Tem certeza que deseja excluir permanentemente o cliente ${clienteDetalhe.nome}?`)) {
       try {
         const res = await fetch(`/api/clientes/${clienteDetalhe.id}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
+          method: 'DELETE'
         });
 
         const data = await res.json();
@@ -566,9 +558,9 @@ export function AdminClientes() {
         setActiveModal(null);
         setSelectedClienteId(null);
         carregarClientes();
-      } catch (err: any) {
+      } catch (err) {
         console.error(err);
-        showToast(err.message, 'error');
+        showToast(errorMessage(err), 'error');
       }
     }
   };

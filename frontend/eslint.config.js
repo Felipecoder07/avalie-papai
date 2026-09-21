@@ -18,6 +18,11 @@ export default tseslint.config(
       'react-refresh': reactRefresh,
     },
     rules: {
+      '@typescript-eslint/no-unused-expressions': ['error', {
+        allowShortCircuit: false,
+        allowTernary: false,
+        allowTaggedTemplates: false,
+      }],
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': [
         'warn',

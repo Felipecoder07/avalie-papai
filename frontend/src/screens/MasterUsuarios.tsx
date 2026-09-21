@@ -1,3 +1,4 @@
+import type { SaaSArena, ManagedUser, AuditLog } from '../types/api';
 import { apiFetch as fetch } from '../utils/apiFetch';
 import { useMemo, useState, useEffect } from 'react';
 import { KeyRound, Power, History } from 'lucide-react';
@@ -13,16 +14,16 @@ export function MasterUsuarios() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'ativo' | 'desativado'>('all');
   const [page, setPage] = useState(1);
   
-  const [users, setUsers] = useState<any[]>([]);
-  const [arenas, setArenas] = useState<any[]>([]);
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [arenas, setArenas] = useState<SaaSArena[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const [accessUser, setAccessUser] = useState<any | null>(null);
-  const [accessLogs, setAccessLogs] = useState<any[]>([]);
+  const [accessUser, setAccessUser] = useState<ManagedUser | null>(null);
+  const [accessLogs, setAccessLogs] = useState<AuditLog[]>([]);
   const [loadingAccess, setLoadingAccess] = useState(false);
   
-  const [deactivateUser, setDeactivateUser] = useState<any | null>(null);
-  const [resetUser, setResetUser] = useState<any | null>(null);
+  const [deactivateUser, setDeactivateUser] = useState<ManagedUser | null>(null);
+  const [resetUser, setResetUser] = useState<ManagedUser | null>(null);
 
   const fetchUsuarios = async () => {
     try {
@@ -33,7 +34,7 @@ export function MasterUsuarios() {
         fetch('/api/saas/arenas', { headers }).then(r => r.json())
       ]);
 
-      const mappedUsers = (Array.isArray(usersRes) ? usersRes : []).map((u: any) => ({
+      const mappedUsers = (Array.isArray(usersRes) ? usersRes : []).map((u) => ({
         id: u.id,
         name: u.nome,
         email: u.email,
@@ -57,7 +58,7 @@ export function MasterUsuarios() {
     fetchUsuarios();
   }, []);
 
-  const handleOpenAccess = async (u: any) => {
+  const handleOpenAccess = async (u: ManagedUser) => {
     setAccessUser(u);
     setLoadingAccess(true);
     setAccessLogs([]);
@@ -99,7 +100,7 @@ export function MasterUsuarios() {
         headers: {}
       });
       if (res.ok) {
-        alert(`Senha de ${resetUser.name} redefinida para "arena123" com sucesso!`);
+        alert('Link individual de redefinição enviado ao e-mail cadastrado.');
       }
     } catch (e) {
       console.error(e);
@@ -130,16 +131,16 @@ export function MasterUsuarios() {
       <Card className="p-3 mb-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[250px]">
-            <Input placeholder="Buscar por nome ou e-mail..." value={search} onChange={(e: any) => { setSearch(e.target.value); setPage(1); }} />
+            <Input placeholder="Buscar por nome ou e-mail..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
           </div>
           <div className="w-full sm:w-[220px]">
-            <Select value={arenaFilter} onChange={(e: any) => { setArenaFilter(e.target.value); setPage(1); }}>
+            <Select value={arenaFilter} onChange={(e) => { setArenaFilter(e.target.value); setPage(1); }}>
               <option value="all">Todas as arenas</option>
               {arenas.map((a) => <option key={a.id} value={String(a.id)}>{a.nome}</option>)}
             </Select>
           </div>
           <div className="w-full sm:w-[160px]">
-            <Select value={roleFilter} onChange={(e: any) => { setRoleFilter(e.target.value); setPage(1); }}>
+            <Select value={roleFilter} onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}>
               <option value="all">Todos os perfis</option>
               <option value="admin">Admin</option>
               <option value="gerente">Gerente</option>
@@ -147,7 +148,7 @@ export function MasterUsuarios() {
             </Select>
           </div>
           <div className="w-full sm:w-[150px]">
-            <Select value={statusFilter} onChange={(e: any) => { setStatusFilter(e.target.value); setPage(1); }}>
+            <Select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value === 'ativo' ? 'ativo' : e.target.value === 'desativado' ? 'desativado' : 'all'); setPage(1); }}>
               <option value="all">Todos os status</option>
               <option value="ativo">Ativo</option>
               <option value="desativado">Desativado</option>
@@ -177,7 +178,7 @@ export function MasterUsuarios() {
                     <td className="px-5 py-3 text-muted">{u.email}</td>
                     <td className="px-5 py-3 text-muted">{u.arenaName}</td>
                     <td className="px-5 py-3"><span className="capitalize">{u.roleOriginal || u.role}</span></td>
-                    <td className="px-5 py-3"><Badge status={u.status}>{u.status}</Badge></td>
+                    <td className="px-5 py-3"><Badge status={u.status === 'ativo' ? 'ativo' : 'desativado'}>{u.status}</Badge></td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-0.5">
                         <button onClick={() => handleOpenAccess(u)} title="Últimos acessos" className="p-1.5 rounded-md text-muted hover:text-charcoal hover:bg-cream-surface transition-colors"><History size={15} /></button>

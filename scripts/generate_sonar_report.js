@@ -5,8 +5,8 @@ const raw = JSON.parse(fs.readFileSync('sonar_issues_raw.json', 'utf8'));
 
 let md = `# 📊 Relatório Completo de Análise SonarCloud - Arenix
 
-**Data da Coleta:** ${new Date().toLocaleString('pt-BR')}  
-**Projeto no SonarCloud:** \`Felipecoder07_Arenix\`  
+**Data da Coleta:** ${new Date().toLocaleString('pt-BR')}
+**Projeto no SonarCloud:** \`Felipecoder07_avalie-papai\`
 **Total de Problemas Encontrados:** **${summary.total}**
 
 ---
