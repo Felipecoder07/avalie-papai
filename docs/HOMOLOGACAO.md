@@ -1,5 +1,13 @@
 # Validação antes de produção
 
+> Atualização de 22/09/2026: este documento contém resultados históricos de
+> 11/09. As referências abaixo a banco de testes em arquivo, ausência de testes
+> de navegador e falhas de lint não descrevem o estado atual. A suíte atual usa
+> SQLite em memória e contém testes de navegador. Consulte o
+> [checkpoint vigente](PENDENCIAS_SEGURANCA_2026-09-21.md), o
+> [inventário funcional](INVENTARIO_FUNCIONAL_2026-09-22.md) e o
+> [roteiro externo atualizado](HOMOLOGACAO_EXTERNA_2026-09-22.md).
+
 A aprovação exige evidências em três etapas: automação local, fluxos completos em homologação e operação no ambiente de destino. Nenhuma suíte isolada certifica o sistema inteiro. Cenário sem evidência permanece pendente.
 
 ## 1. Executar a automação local

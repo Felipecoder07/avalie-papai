@@ -207,11 +207,13 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 - [x] Limites globais e por operação: login, cadastro, recuperação, desafios, checkout, upload, cobranças e webhook; combinar IP com conta/tenant/objeto e usar armazenamento compartilhado se houver várias instâncias.
 - [x] Limitar corpo JSON por rota, quantidade de itens, páginas e intervalos de relatórios; impor timeout e limite de concorrência nas chamadas externas. Retry de operação financeira exige idempotência persistida.
 - [ ] Configurar `trust proxy` conforme os proxies reais; bloquear acesso direto ao processo quando depender do proxy e testar IP forjado.
+- [x] Implementar validação de IPs/CIDRs de proxies, rejeição de socket não confiável em produção e bind local por padrão; testar IP forjado e impedir que `x-tenant-slug` altere o limite de login. Configuração do deploy continua pendente.
 - [x] Configuração central validada na inicialização: segredo forte sem fallback, modo produção explícito, URLs canônicas HTTPS de frontend/API/OAuth, origens permitidas e credenciais necessárias aos recursos habilitados.
 - [x] OAuth permanece com callback público, mas state opaco aleatório, de uso único e expiração curta, vinculado ao usuário/tenant. Revalidar usuário ativo e permissão ao consumir; exigir URL de retorno configurada em produção e nenhum segredo na URL/resposta. Não trocar state opaco por tenant em query.
 - [ ] Armazenar segredos de integração e 2FA com criptografia autenticada e chave versionada fora do banco, ou serviço de segredos do deploy. Definir rotação e acesso mínimo; nunca incluir a chave de cifragem no mesmo backup de dados.
+- [x] Implementar envelope AES-256-GCM v2 com ID de chave autenticado, leitura v1, keyring externo, simulação e rotação transacional. Testar adulteração, chave ausente, repetição e rollback. Provisionamento de chaves e migração do banco alvo continuam pendentes.
 - [ ] HTTPS e redirecionamento no proxy, HSTS depois de confirmar HTTPS em todos os domínios, acesso mínimo ao SQLite/backups e ausência de `.env`, banco e sourcemaps sensíveis nas pastas públicas.
-- [ ] Verificar uso/políticas do Supabase: nunca entregar service role ao navegador; se houver tabelas/buckets acessíveis, validar permissões e isolamento por identidade/tenant com credencial anônima e de usuário.
+- [x] Verificar uso do Supabase no repositório: não encontrado no código executável/dependências das três aplicações em 21/09/2026. O armazenamento atual é SQLite. Se Supabase for introduzido ou existir fora deste repositório, validar RLS, buckets e isolamento antes de publicar.
 
 **Aceite:** arquivo com HTML disfarçado é rejeitado; payload de XSS não executa no navegador; escrita sem CSRF/origem válida falha no contrato por cookies; limites são exercitados com modo de produção; inicialização insegura falha com erro sem expor segredo. O callback OAuth legítimo continua funcionando.
 
@@ -249,7 +251,7 @@ As etapas são entregas pequenas e revisáveis, preferencialmente commits separa
 
 ## 7. Homologar e publicar com critérios de saída
 
-- [ ] Executar regressões de segurança e suítes funcionais do backend e das duas interfaces; TypeScript, lint e build de produção nas interfaces.
+- [x] Executar regressões de segurança e suítes funcionais do backend e das duas interfaces; TypeScript, lint e build de produção nas interfaces. Em 21/09/2026: backend 341/341, painel 62/62, cliente 31/31; typechecks, lints sem avisos, builds e inspeção dos artefatos aprovados. A navegação inicial do E2E exigiu ajuste de timeout e repetição completa do backend. Evidências e limites no [registro de fechamento](PENDENCIAS_SEGURANCA_2026-09-21.md).
 - [ ] E2E de conta/ativação, Google, senha/2FA, sessão revogada, troca de arena, reserva de visitante, Pix, cartão/maquineta disponíveis, pagamento parcial, estorno e assinatura SaaS.
 - [ ] Usar as rotas registradas para produção nos testes. Simular assinatura/eventos do provedor de forma fiel; validar integração real apenas em sandbox de pagamento.
 - [ ] Testar falha de rede, banco ocupado, processo interrompido, eventos duplicados/fora de ordem e recuperação de jobs.

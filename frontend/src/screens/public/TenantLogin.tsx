@@ -115,7 +115,7 @@ export function TenantLogin() {
                   <polyline points="20 6 9 17 4 12"></polyline>
                 </svg>
               </div>
-              Gestão de clientes e mensalistas
+              Gestão de clientes e reservas
             </div>
           </div>
         </div>

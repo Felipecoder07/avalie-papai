@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { enterpriseContactUrl } from '../../utils/commercialContact';
 import { errorMessage } from '../../utils/errorMessage';
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import React, { useState, useEffect } from 'react';
@@ -272,7 +273,7 @@ function PlanoCardModal({ plano: p, dados, cicloSelecionado, solicitandoUpgradeI
         </button>
       ) : isEnterprise ? (
         <a
-          href="https://wa.me/5500000000000?text=Olá! Gostaria de saber mais sobre o Plano Enterprise do CourtManager."
+          href={enterpriseContactUrl}
           target="_blank"
           rel="noopener noreferrer"
           style={{

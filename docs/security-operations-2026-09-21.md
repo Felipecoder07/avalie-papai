@@ -1,8 +1,17 @@
 # Operação após as correções locais — 21/09/2026
 
+Atualização de 22/09: use também o [roteiro externo](HOMOLOGACAO_EXTERNA_2026-09-22.md)
+e `npm.cmd run check:local` para diagnóstico local somente leitura, sem rede. O
+comando resume integridade, inconsistências, cifragem e filas; não substitui
+monitoramento externo nem aprova configuração de produção. A execução integral
+mais recente e as lacunas funcionais estão no checkpoint ligado abaixo.
+
 Este documento prepara a implantação; não registra publicação, rotação de tokens
 reais ou aprovação de integração externa. O usuário confirmou que ainda não tem
-domínio/hospedagem definidos. Os `.env` reais não foram alterados.
+domínio/hospedagem definidos, e adiou essa definição até a produção.
+Na última etapa local, o `.env` do backend recebeu somente o caminho do keyring e
+o ID da chave; os três segredos persistidos foram cifrados após backup e ensaio.
+Ver o estado atualizado em [pendências](PENDENCIAS_SEGURANCA_2026-09-21.md).
 
 ## Ambiente atual
 
@@ -14,7 +23,9 @@ domínio real. O token MP configurado não tem prefixo `TEST-`: não foi usado e
 requisições de teste nem considerado evidência de conta sandbox.
 
 O `.env` local não define modo de produção, segredo de sessão/JWT, origens CORS,
-URL pública, proxies nem chaves de cifragem. Não copiar o exemplo por cima dele:
+URL pública nem proxies. A chave local de cifragem já foi configurada em arquivo
+privado `.local-security/secret-keys.json`, com ACL Windows restrita.
+Não copiar o exemplo por cima do `.env`:
 adicionar as configurações de produção no ambiente de hospedagem, preservando as
 credenciais existentes e usando valores próprios desse ambiente.
 
@@ -126,5 +137,28 @@ Sem domínio/hospedagem e confirmação de contas sandbox, estes passos ficam ab
    Reconciliar eventos posteriores ao backup antes de qualquer restauração financeira;
    não reativar rotas vulneráveis ou apagar pagamentos novos por rollback.
 
-A divergência pré-existente de 2 centavos na reserva 110 continua dependente de
-conciliação do dado real. Nenhum script novo altera saldos nem faz reembolso automático.
+A divergência da reserva 110 foi conciliada após consulta autenticada ao provedor:
+um pagamento real de 1 centavo, integralmente estornado. Os três lançamentos
+originais foram preservados, com ajustes de -2 centavos por duplicidade e -1 pelo
+estorno histórico. Nenhum novo reembolso foi solicitado. Evidências e procedimento
+estão no [documento de retomada](PENDENCIAS_SEGURANCA_2026-09-21.md).
+
+## Migração dos motivos globais legados
+
+Concluída nesta máquina após ensaio: quatro motivos com tenant 0 passaram a NULL,
+preservando seus IDs. A API SaaS agora grava NULL e lê também o formato legado.
+Para outro banco legado, com o serviço parado e diretório de backup protegido:
+
+```sh
+node backend/scripts/migrate_global_reasons.js CAMINHO_BANCO_EXISTENTE CAMINHO_BACKUP_NOVO
+```
+
+Ensaiar primeiro numa cópia. O script cria backup, adapta a coluna legada NOT NULL,
+preserva registros e verifica referências antes de confirmar a transação. Não
+resolve órfãos financeiros. As transações 35 e 45 foram tratadas separadamente após
+o provedor confirmar cancelamento: seus registros completos estão preservados em
+`LegacyGatewayArchive`; não restam referências órfãs no banco local.
+
+A consulta usada foi a [API oficial de leitura de pagamentos](https://www.mercadopago.com.br/developers/pt/reference/online-payments/checkout-pro-preferences/get-payment/get),
+com conferência adicional da conta autenticada. Essa conciliação de registros
+históricos não substitui a homologação completa do fluxo atual de pagamentos.

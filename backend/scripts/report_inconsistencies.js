@@ -66,7 +66,7 @@ async function findInconsistentGroups(database) {
 }
 
 async function collectReport(database) {
-  const [duplicates, orphanPayments, superAdmins, defaultSecrets, crossTenantLinks, inconsistentGroups] = await Promise.all([
+  const [duplicates, orphanPayments, superAdmins, defaultSecrets, crossTenantLinks, inconsistentGroups, foreignKeyViolations] = await Promise.all([
     database.allAsync(`
       SELECT LOWER(TRIM(email)) AS email_normalizado,
              COUNT(*) AS quantidade,
@@ -118,7 +118,8 @@ async function collectReport(database) {
       WHERE r.tenant_id != q.tenant_id
       ORDER BY tipo, origem_id
     `),
-    findInconsistentGroups(database)
+    findInconsistentGroups(database),
+    database.allAsync('PRAGMA foreign_key_check')
   ]);
 
   const report = {
@@ -128,6 +129,7 @@ async function collectReport(database) {
     duplicidades_usuarios: duplicates,
     vinculos_entre_arenas: crossTenantLinks,
     pagamentos_sem_reserva: orphanPayments,
+    referencias_orfas: foreignKeyViolations,
     grupos_com_saldo_inconsistente: inconsistentGroups,
     contas_superadmin: superAdmins,
     segredos_padrao: defaultSecrets
@@ -160,7 +162,7 @@ async function main() {
   const report = await collectReport(database);
   const output = writeReport(report, argument('--output') || DEFAULT_REPORT_PATH);
   console.log(JSON.stringify({
-    status: report.grupos_com_saldo_inconsistente.length || report.pagamentos_sem_reserva.length || report.vinculos_entre_arenas.length
+    status: requiresReview(report)
       ? 'review_required'
       : 'ok',
     report_id: report.report_id,
@@ -169,6 +171,7 @@ async function main() {
       duplicidades_usuarios: report.duplicidades_usuarios.length,
       vinculos_entre_arenas: report.vinculos_entre_arenas.length,
       pagamentos_sem_reserva: report.pagamentos_sem_reserva.length,
+      referencias_orfas: report.referencias_orfas.length,
       grupos_com_saldo_inconsistente: report.grupos_com_saldo_inconsistente.length,
       contas_superadmin: report.contas_superadmin.length,
       segredos_padrao: report.segredos_padrao.length
@@ -183,7 +186,13 @@ if (require.main === module) {
   });
 }
 
+function requiresReview(report) {
+  return ['grupos_com_saldo_inconsistente', 'pagamentos_sem_reserva', 'vinculos_entre_arenas',
+    'referencias_orfas', 'duplicidades_usuarios', 'segredos_padrao'].some(key => report[key]?.length > 0);
+}
+
 module.exports = {
+  requiresReview,
   REPORT_SCHEMA_VERSION,
   collectReport,
   findInconsistentGroups,

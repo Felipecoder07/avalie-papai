@@ -919,17 +919,9 @@ export function AdminConfiguracoes() {
             </div>
             <div className="setting-row">
               <div className="setting-info">
-                <div className="setting-name">Confirmação de reserva por WhatsApp</div>
-                <div className="setting-desc">Envia link de WhatsApp ao cliente quando uma reserva é criada</div>
+                <div className="setting-name">Compartilhamento manual por WhatsApp</div>
+                <div className="setting-desc">No botão de compartilhar o portal, o WhatsApp abre com uma mensagem pronta e o link da arena. Você escolhe o destinatário e confirma o envio.</div>
               </div>
-              <label className="toggle">
-                <input 
-                  type="checkbox" 
-                  checked={arena.notif_reserva_whatsapp === 1}
-                  onChange={(e) => handleToggleNotification('notif_reserva_whatsapp', e.target.checked ? 1 : 0)}
-                />
-                <span className="toggle-slider"></span>
-              </label>
             </div>
             <div className="setting-row">
               <div className="setting-info">

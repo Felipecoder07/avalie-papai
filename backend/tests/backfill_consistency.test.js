@@ -1,6 +1,27 @@
 const sqlite3 = require('sqlite3').verbose();
-const { collectReport } = require('../scripts/report_inconsistencies');
+const { collectReport, requiresReview } = require('../scripts/report_inconsistencies');
 const { applyApprovedBackfill, assertValidReport, planBackfill } = require('../scripts/backfill_data');
+const { migrateGlobalReasons } = require('../scripts/migrate_global_reasons');
+
+it('migrates legacy global reasons without breaking reservation references or arena ownership', async () => {
+  const db = database();
+  try {
+    await db.execAsync(`
+      CREATE TABLE Arenas(id INTEGER PRIMARY KEY);
+      INSERT INTO Arenas VALUES(1);
+      CREATE TABLE MotivosCancelamento(id INTEGER PRIMARY KEY AUTOINCREMENT,tenant_id INTEGER NOT NULL,motivo TEXT NOT NULL,criado_em TEXT,FOREIGN KEY(tenant_id) REFERENCES Arenas(id));
+      INSERT INTO MotivosCancelamento VALUES(51,0,'Global','original'),(52,1,'Arena','original');
+      CREATE TABLE Reservas(id INTEGER PRIMARY KEY,motivo_cancelamento_id INTEGER REFERENCES MotivosCancelamento(id));
+      INSERT INTO Reservas VALUES(110,51);
+      PRAGMA foreign_keys=ON;
+    `);
+    expect(await migrateGlobalReasons(db)).toEqual({ normalized: 1, remainingForeignKeyViolations: 0 });
+    expect(await db.allAsync('SELECT id,tenant_id FROM MotivosCancelamento ORDER BY id')).toEqual([{ id: 51, tenant_id: null }, { id: 52, tenant_id: 1 }]);
+    expect(await db.allAsync('SELECT * FROM Reservas')).toEqual([{ id: 110, motivo_cancelamento_id: 51 }]);
+    expect(await db.allAsync('PRAGMA foreign_keys')).toEqual([{ foreign_keys: 1 }]);
+    expect(await migrateGlobalReasons(db)).toEqual({ normalized: 0, remainingForeignKeyViolations: 0 });
+  } finally { await db.closeAsync(); }
+});
 
 function database() {
   const db = new sqlite3.Database(':memory:');
@@ -20,6 +41,24 @@ function database() {
   db.closeAsync = () => new Promise((resolve, reject) => db.close(error => error ? reject(error) : resolve()));
   return db;
 }
+
+it('flags orphan gateway references even when no payment or group is inconsistent', async () => {
+  const db = await fixture();
+  try {
+    await db.execAsync(`
+      DELETE FROM Pagamentos;
+      DELETE FROM Usuarios WHERE id IN (1,2);
+      DELETE FROM Reservas WHERE id=30;
+      CREATE TABLE TransacoesGateway(id INTEGER PRIMARY KEY,reserva_id INTEGER REFERENCES Reservas(id));
+      INSERT INTO TransacoesGateway VALUES(35,999);
+    `);
+    const report = await collectReport(db);
+    expect(report.referencias_orfas).toEqual([{ table: 'TransacoesGateway', rowid: 35, parent: 'Reservas', fkid: 0 }]);
+    expect(report.grupos_com_saldo_inconsistente).toEqual([]);
+    expect(report.pagamentos_sem_reserva).toEqual([]);
+    expect(requiresReview(report)).toBe(true);
+  } finally { await db.closeAsync(); }
+});
 
 async function fixture() {
   const db = database();

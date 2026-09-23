@@ -1,5 +1,6 @@
 import { apiFetch as fetch } from '../../utils/apiFetch';
 import { Link } from 'react-router-dom';
+import { enterpriseContactUrl } from '../../utils/commercialContact';
 import '../../assets/css/landing.css';
 
 import { useState, useEffect } from 'react';
@@ -192,7 +193,7 @@ export function LandingPage() {
               <div className="feature-icon">◉</div>
               <div className="feature-title">Gestão de Clientes</div>
               <p className="feature-desc">Mantenha o histórico de todos os praticantes da sua arena. Saiba quem são os clientes
-                frequentes e controle mensalistas com facilidade.</p>
+                frequentes e acompanhe seu histórico de reservas.</p>
             </div>
             <div className="feature-card">
               <div className="feature-icon">▤</div>
@@ -313,7 +314,7 @@ export function LandingPage() {
                     <li>Relatórios completos</li>
                     <li>{p?.max_usuarios || 10} usuários internos</li>
                     <li>Auditoria e logs</li>
-                    <li>Gestão de mensalistas</li>
+                    <li>Gestão de clientes e reservas</li>
                     <li>Suporte prioritário</li>
                   </ul>
                   <Link to={`/cadastro?plano=${p?.id || 3}`} className="btn btn-dark btn-full">Começar grátis</Link>
@@ -350,7 +351,7 @@ export function LandingPage() {
                     <li>Integrações via API</li>
                     <li>SLA dedicado</li>
                   </ul>
-                  <a href="mailto:sales@courtmanager.app" className="btn btn-dark btn-full">Falar com vendas</a>
+                  <a href={enterpriseContactUrl} target="_blank" rel="noopener noreferrer" className="btn btn-dark btn-full">Falar com vendas</a>
                 </div>
               );
             })()}

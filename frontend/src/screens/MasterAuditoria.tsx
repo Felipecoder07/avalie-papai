@@ -3,7 +3,7 @@ import { apiFetch as fetch } from '../utils/apiFetch';
 import { useState, useEffect } from 'react';
 import { ShieldCheck, Search, KeyRound, Activity, Lock, Eye, EyeOff } from 'lucide-react';
 import { Card, Badge, Button, PageHeader, Field, Input, Select, EmptyState } from '../components/ui';
-import { ARENAS, formatDateTime, relativeTime } from '../data/mock';
+import { formatDateTime, relativeTime } from '../data/mock';
 
 export function MasterAuditoria() {
   const [arenaSearch, setArenaSearch] = useState('');
@@ -128,9 +128,9 @@ export function MasterAuditoria() {
           <div className="relative flex-1">
             <Input placeholder="Buscar pelo nome da arena..." value={arenaSearch} onChange={(e) => setArenaSearch(e.target.value)} />
           </div>
-          <Select className="w-auto">
+          <Select className="w-auto" value={arenaSearch} onChange={(e) => setArenaSearch(e.target.value)}>
             <option value="">Todas as arenas</option>
-            {ARENAS.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            {[...new Set(auditLogs.map(log => log.arena_nome).filter((name): name is string => Boolean(name)))].sort().map(name => <option key={name} value={name}>{name}</option>)}
           </Select>
         </div>
         {arenaSearch && crossLogs.length === 0 ? (
@@ -157,8 +157,8 @@ export function MasterAuditoria() {
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-4">
             <Activity size={15} className="text-muted" />
-            <h3 className="text-sm font-semibold">Sessões ativas</h3>
-            <Badge status="success">{activeSessions.length} arenas</Badge>
+            <h3 className="text-sm font-semibold">Sessões válidas</h3>
+            <Badge status="success">{activeSessions.length} grupos</Badge>
           </div>
           {activeSessions.length === 0 ? (
             <EmptyState message="Nenhuma sessão ativa no momento." />
@@ -168,7 +168,7 @@ export function MasterAuditoria() {
                 <li key={s.arenaId} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-cream/40 border border-border-passive">
                   <div>
                     <div className="text-sm font-medium text-charcoal">{s.arenaName}</div>
-                    <div className="text-xs text-muted">{s.users} usuário(s) logado(s) · ativo desde {formatDateTime(s.since)}</div>
+                    <div className="text-xs text-muted">{s.users} usuário(s) com sessão válida · desde {formatDateTime(s.since)}</div>
                   </div>
                   <span className="w-2 h-2 rounded-full bg-success pulse-dot" />
                 </li>

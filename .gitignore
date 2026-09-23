@@ -1,5 +1,6 @@
 node_modules/
 .env
+.env.homologacao
 *.sqlite
 *.sqlite3
 data/*.sqlite
@@ -10,3 +11,4 @@ dist/
 build/
 artifacts/homologacao/
 backend/data/
+.local-security/

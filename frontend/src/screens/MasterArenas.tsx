@@ -4,7 +4,7 @@ import { apiFetch as fetch } from '../utils/apiFetch';
 import { useMemo, useState, useEffect } from 'react';
 import { Plus, Eye, Pencil, Ban, CheckCircle, Trash2, Filter, ChevronDown, Globe } from 'lucide-react';
 import { Card, Badge, Button, PageHeader, Modal, ConfirmModal, Field, Input, Select, EmptyState, Pagination } from '../components/ui';
-import { PLANS, formatDate, formatBRL } from '../data/mock';
+import { formatDate, formatBRL } from '../data/mock';
 
 interface Props { onNavigate: (id: string) => void; }
 
@@ -104,8 +104,8 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
     return arenas.filter((a) => {
       if (search && !`${a.nome} ${a.email}`.toLowerCase().includes(search.toLowerCase())) return false;
       const st = a.status === 1 ? 'ativa' : a.status === 0 ? 'bloqueada' : 'excluida';
-      if (statusFilter !== 'all' && st !== statusFilter) return false;
-      if (planFilter !== 'all' && (a.plano_nome || 'Basic') !== planFilter) return false;
+      if (statusFilter === 'trial' ? !a.em_trial : statusFilter !== 'all' && st !== statusFilter) return false;
+      if (planFilter !== 'all' && String(a.plano_id) !== planFilter) return false;
       if (dateFrom && new Date(a.criado_em) < new Date(dateFrom)) return false;
       if (dateTo && new Date(a.criado_em) > new Date(dateTo)) return false;
       return true;
@@ -139,7 +139,7 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
           </Select>
           <Select value={planFilter} onChange={(e) => { setPlanFilter(e.target.value); setPage(1); }} className="w-auto min-w-[120px]">
             <option value="all">Todos os planos</option>
-            {PLANS.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
+            {planosSaaS.map((p) => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}
           </Select>
           <Button variant="ghost" onClick={() => setShowFilters((s) => !s)}>
             <Filter size={14} /> Filtros <ChevronDown size={13} className={`transition-transform ${showFilters ? 'rotate-180' : ''}`} />
@@ -179,10 +179,10 @@ export function MasterArenas({ onNavigate }: Readonly<Props>) {
               </thead>
               <tbody className="divide-y divide-border-passive">
                 {pageItems.map((a) => {
-                  const st = a.status === 1 ? 'ativa' : a.status === 0 ? 'bloqueada' : 'excluida';
+                  const st = a.status === 1 ? (a.em_trial ? 'trial' : 'ativa') : a.status === 0 ? 'bloqueada' : 'excluida';
                   const fin = a.faturas_atrasadas > 0 ? 'atrasado' : 'pago';
                   const financeLabel: Record<string, string> = { pago: 'Em dia', pendente: 'Pendente', atrasado: 'Atrasado' };
-                  const statusLabel: Record<string, string> = { ativa: 'Ativa', bloqueada: 'Bloqueada', excluida: 'Excluída' };
+                  const statusLabel: Record<string, string> = { ativa: 'Ativa', trial: 'Em teste', bloqueada: 'Bloqueada', excluida: 'Excluída' };
                   return (
                   <tr key={a.id} className="hover:bg-cream/50 transition-colors">
                     <td className="px-4 py-3">

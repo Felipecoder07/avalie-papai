@@ -38,6 +38,8 @@ export interface ArenaLog {
 }
 
 export interface SaaSArena {
+  em_trial?: boolean;
+  trial_expira_em?: string | null;
   id: number;
   nome: string;
   email: string;

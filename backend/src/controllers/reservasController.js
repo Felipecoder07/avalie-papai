@@ -208,7 +208,7 @@ const criarBloqueio = async (req, res) => {
 
     logAuditEvent(usuario_id, 'Criação de bloqueio', `Bloqueio ID: ${insert.lastID}, Quadra: ${quadra_id}, Data: ${data_bloqueio}`, req.ip);
 
-    res.status(201).json({ message: 'Quadra bloqueada com sucesso.', bloqueio_id: insert.lastID });
+    res.status(201).json({ message: 'Quadra bloqueada com sucesso.', bloqueio_id: insert.lastID, id: insert.lastID });
   } catch (error) {
     logger.error('Erro ao criar bloqueio:', error);
     res.status(500).json({ error: 'Erro interno do servidor.' });

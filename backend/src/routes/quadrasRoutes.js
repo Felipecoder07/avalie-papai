@@ -17,6 +17,6 @@ router.patch('/:id/status', requirePermission('courts.manage'), alterarStatusQua
 router.delete('/:id', requirePermission('courts.manage'), deletarQuadra);
 
 // Bloqueios
-router.post('/bloqueios', requirePermission('reservations.manage'), criarBloqueio);
+router.post('/bloqueios', requirePermission('blocks.manage'), criarBloqueio);
 
 module.exports = router;

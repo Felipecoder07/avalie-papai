@@ -207,7 +207,7 @@ export function Checkout() {
               </div>
               <div className="onboard-check">
                 <div className="onboard-check-icon">✓</div>
-                <span>Gestão de mensalistas e recorrência automatizada</span>
+                <span>Gestão de clientes e histórico de reservas</span>
               </div>
               <div className="onboard-check">
                 <div className="onboard-check-icon">✓</div>

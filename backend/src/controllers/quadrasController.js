@@ -221,27 +221,8 @@ const alterarStatusQuadra = async (req, res) => {
   }
 };
 
-// Criar Bloqueio
-const criarBloqueio = async (req, res) => {
-  try {
-    const tenant_id = req.user.tenant_id;
-    const { quadra_id, data_bloqueio, hora_inicio, hora_fim, motivo } = req.body;
-
-    // TODO: checar se quadra pertence ao tenant
-
-    const insert = await db.runAsync(`
-      INSERT INTO Bloqueios (quadra_id, data_bloqueio, hora_inicio, hora_fim, motivo, criado_por)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [quadra_id, data_bloqueio, hora_inicio, hora_fim, motivo, req.user.id]);
-
-    logAuditEvent(req.user.id, 'Criação de bloqueio', `Bloqueou a quadra ID ${quadra_id} no dia ${data_bloqueio} (${hora_inicio} às ${hora_fim})`, req.ip);
-
-    res.status(201).json({ message: 'Bloqueio criado com sucesso', id: insert.lastID });
-  } catch (error) {
-    logger.error('Erro ao criar bloqueio:', error);
-    res.status(500).json({ error: 'Erro interno ao criar bloqueio.' });
-  }
-};
+// Both URLs use the same tenant, reservation-conflict and date checks.
+const { criarBloqueio } = require('./reservasController');
 
 // Excluir Quadra (Soft Delete Híbrido)
 const deletarQuadra = async (req, res) => {

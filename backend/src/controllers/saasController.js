@@ -19,6 +19,8 @@ const getArenas = async (req, res) => {
         a.criado_em,
         a.plano_id,
         a.dia_vencimento,
+        a.trial_expira_em,
+        a.fuso_horario,
         p.nome as plano_nome,
         (SELECT COUNT(*) FROM Usuarios WHERE tenant_id = a.id AND perfil = 'Administrador') as admins,
         (SELECT COUNT(*) FROM FaturasSaaS WHERE tenant_id = a.id AND status = 'Atrasada') as faturas_atrasadas,
@@ -28,7 +30,11 @@ const getArenas = async (req, res) => {
       WHERE a.status != -1
       ORDER BY a.criado_em DESC
     `);
-    res.json(arenas);
+    res.json(arenas.map(arena => ({
+      ...arena,
+      em_trial: arena.status === 1 && Boolean(arena.trial_expira_em) &&
+        arena.trial_expira_em.slice(0, 10) >= require('../utils/dateUtils').getTodayString(arena.fuso_horario || 'America/Sao_Paulo')
+    })));
   } catch (err) {
     res.status(500).json({ error: 'Erro ao buscar arenas.' });
   }
@@ -667,20 +673,29 @@ function verifyTOTP(secret, code, window = 1) {
 
 const getActiveSessions = async (req, res) => {
   try {
-    // Retorna sessões ativas nos últimos 15 minutos
+    // Valid sessions are not an assertion of online presence.
     const sessions = await db.allAsync(`
-      SELECT s.tenant_id as arenaId, a.nome as arenaName, COUNT(DISTINCT s.usuario_id) as users, MIN(s.criado_em) as since
-      FROM SessoesAtivas s
-      LEFT JOIN Arenas a ON s.tenant_id = a.id
-      WHERE s.ultimo_acesso >= datetime('now', '-15 minutes')
-      GROUP BY s.tenant_id
-    `);
+      SELECT s.usuario_id, s.tenant_id, s.created, s.password_hash, u.senha_hash,
+             a.nome AS arena_name
+      FROM AuthSessions s JOIN Usuarios u ON u.id=s.usuario_id
+      LEFT JOIN Arenas a ON a.id=s.tenant_id
+      WHERE s.revoked=0 AND s.expires>? AND u.ativo=1
+        AND COALESCE(u.activation_pending,0)=0 AND s.perfil=u.perfil
+        AND s.tenant_id IS u.tenant_id
+    `, [Date.now()]);
 
-    const formattedSessions = sessions.map(s => ({
-      arenaId: s.arenaId || 0,
-      arenaName: s.arenaName || 'Painel Administrativo Master',
-      users: s.users,
-      since: s.since
+    const groups = new Map();
+    for (const session of sessions) {
+      if (session.password_hash !== require('../utils/security').hash(session.senha_hash)) continue;
+      const id = session.tenant_id || 0;
+      if (!groups.has(id)) groups.set(id, { arenaId: id, arenaName: session.arena_name || 'Conta sem arena / Master', users: new Set(), created: session.created });
+      const group = groups.get(id);
+      group.users.add(session.usuario_id);
+      group.created = Math.min(group.created, session.created);
+    }
+    const formattedSessions = [...groups.values()].map(group => ({
+      arenaId: group.arenaId, arenaName: group.arenaName,
+      users: group.users.size, since: new Date(group.created).toISOString()
     }));
 
     res.json(formattedSessions);
@@ -878,7 +893,7 @@ const syncEnvFile = (keyValues) => {
 const getConfiguracoesSaaS = async (req, res) => {
   try {
     const configs = await db.allAsync('SELECT chave, valor FROM ConfiguracoesSaaS');
-    const reasonsRows = await db.allAsync('SELECT motivo FROM MotivosCancelamento WHERE tenant_id = 0');
+    const reasonsRows = await db.allAsync('SELECT motivo FROM MotivosCancelamento WHERE tenant_id IS NULL OR tenant_id = 0 ORDER BY id');
 
     const configMap = {};
     configs.forEach(c => {
@@ -947,10 +962,13 @@ async function updateMercadoPagoConfigs(body) {
 
 async function updateReasonsList(reasons) {
   if (!Array.isArray(reasons)) return;
-  await db.runAsync('DELETE FROM MotivosCancelamento WHERE tenant_id = 0');
+  if (reasons.some(reason => typeof reason !== 'string')) {
+    throw require('../utils/security').httpError(400, 'Os motivos devem ser textos.');
+  }
+  await db.runAsync('DELETE FROM MotivosCancelamento WHERE tenant_id IS NULL OR tenant_id = 0');
   for (const r of reasons) {
     if (r.trim()) {
-      await db.runAsync('INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (0, ?)', [r.trim()]);
+      await db.runAsync('INSERT INTO MotivosCancelamento (tenant_id, motivo) VALUES (NULL, ?)', [r.trim()]);
     }
   }
 }

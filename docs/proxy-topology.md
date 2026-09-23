@@ -4,6 +4,11 @@ Status: **modelo local, não publicado**. Em 19/09/2026 foi confirmado que domí
 hospedagem e proxy serão escolhidos antes da produção. Essa decisão e a validação
 em HTTPS continuam pendentes.
 
+Atualização de 21/09/2026: modelos ampliados em `deploy/nginx.conf.template` e
+`deploy/arenix.service.example`; preparação, chaves e limites de validação em
+[operação de segurança](security-operations-2026-09-21.md). O usuário confirmou
+novamente que ainda não existe domínio. Os modelos não foram publicados.
+
 ## Contrato implementado
 
 - As duas interfaces chamam `/api/...` na própria origem. `VITE_BACKEND_URL` não
